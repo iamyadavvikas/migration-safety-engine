@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vikasyadav/migration-safety-engine/internal/plan"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/plan"
 )
 
 // ErrNotFound is returned when a migration row does not exist.

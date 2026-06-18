@@ -18,9 +18,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/vikasyadav/migration-safety-engine/internal/plan"
-	"github.com/vikasyadav/migration-safety-engine/internal/statemachine"
-	"github.com/vikasyadav/migration-safety-engine/internal/store"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/plan"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/statemachine"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/store"
 )
 
 func main() {

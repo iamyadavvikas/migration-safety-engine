@@ -1,4 +1,4 @@
-module github.com/vikasyadav/migration-safety-engine
+module github.com/iamyadavvikas/migration-safety-engine
 
 go 1.24
 

@@ -20,9 +20,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vikasyadav/migration-safety-engine/internal/plan"
-	"github.com/vikasyadav/migration-safety-engine/internal/store"
-	"github.com/vikasyadav/migration-safety-engine/internal/telemetry"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/plan"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/store"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/telemetry"
 )
 
 // State is a node in the migration lifecycle.
