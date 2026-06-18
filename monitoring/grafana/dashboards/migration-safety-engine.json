@@ -1,0 +1,91 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 0,
+  "title": "Migration Safety Engine",
+  "uid": "mse-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-30m", "to": "now" },
+  "refresh": "5s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Current migration state",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "name", "colorMode": "value" },
+      "targets": [
+        {
+          "expr": "migrate_state_info == 1",
+          "legendFormat": "{{plan_id}} → {{state}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Backfill progress (rows)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 16, "x": 8, "y": 0 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "targets": [
+        { "expr": "migrate_backfill_rows_done", "legendFormat": "{{plan_id}} done", "refId": "A" },
+        { "expr": "migrate_backfill_rows_total", "legendFormat": "{{plan_id}} total", "refId": "B" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Backfill completion %",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "targets": [
+        {
+          "expr": "migrate_backfill_rows_done / clamp_min(migrate_backfill_rows_total, 1)",
+          "legendFormat": "{{plan_id}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Shadow-read parity",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "targets": [
+        { "expr": "migrate_verify_parity", "legendFormat": "{{plan_id}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Canary traffic %",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } },
+      "targets": [
+        { "expr": "migrate_canary_step_pct", "legendFormat": "{{plan_id}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "State transitions / s",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "sum by (to_state) (rate(migrate_state_transitions_total[1m]))", "legendFormat": "{{to_state}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Auto-rollbacks (total)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } } },
+      "targets": [
+        { "expr": "sum by (plan_id) (migrate_rollbacks_total)", "legendFormat": "{{plan_id}}", "refId": "A" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+groups:
+  - name: migration-safety-engine
+    rules:
+      # A migration sat in a non-terminal, non-idle state for too long — likely a
+      # stuck backfill, a blocked DDL lock, or a wedged canary bake.
+      - alert: MigrationStuck
+        expr: |
+          max by (migration_id, plan_id, state) (
+            migrate_state_info{state!~"Done|RolledBack|Pending"} == 1
+          )
+          and on (migration_id)
+          (time() - max by (migration_id) (migrate_state_info)) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Migration {{ $labels.plan_id }} stuck in {{ $labels.state }}"
+          description: "Migration {{ $labels.migration_id }} has been in state {{ $labels.state }} for over 10m."
+
+      # An SLO breach triggered an automatic rollback. Page so a human reviews why
+      # the change regressed latency/error-rate before it is retried.
+      - alert: MigrationAutoRolledBack
+        expr: increase(migrate_rollbacks_total[10m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Migration {{ $labels.plan_id }} auto-rolled-back"
+          description: "An SLO breach during canary triggered an auto-rollback for plan {{ $labels.plan_id }}."
+
+      # Shadow-read parity dropped below the safe threshold — the derived column no
+      # longer matches its source expression, so cutover would serve wrong data.
+      - alert: MigrationLowParity
+        expr: migrate_verify_parity < 0.999
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low shadow-read parity for {{ $labels.plan_id }}"
+          description: "Verify parity {{ $value }} is below 0.999 for migration {{ $labels.migration_id }}."
+
+      # The engine stopped being scraped — control plane is down while migrations
+      # may be mid-flight.
+      - alert: EngineDown
+        expr: up{job="migration-safety-engine"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Migration Safety Engine is down"
+          description: "Prometheus cannot scrape the engine; in-flight migrations are not progressing."

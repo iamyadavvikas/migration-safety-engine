@@ -1,0 +1,47 @@
+id: catalog-add-shipping-index
+version: 42
+table: catalog_product
+strategy: expand-contract
+
+# EXPAND: add the new column + index without breaking existing readers/writers.
+# Idempotent (IF NOT EXISTS) so a resume after a partial expand is safe. The index
+# is built CONCURRENTLY, which is why expand statements run outside a transaction.
+expand:
+  - "ALTER TABLE catalog_product ADD COLUMN IF NOT EXISTS shipping_class text"
+  - "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_cp_shipping ON catalog_product (shipping_class)"
+
+# BACKFILL: populate shipping_class for existing rows in throttled batches. The
+# engine resumes mid-backfill by only touching rows where the column IS NULL.
+backfill:
+  column: shipping_class
+  batch_size: 5000
+  throttle_ms: 20
+  source_expr: "CASE WHEN weight < 1 THEN 'light' WHEN weight < 10 THEN 'standard' ELSE 'freight' END"
+
+# VERIFY: confirm convergence (no NULLs left) before cutover. Shadow-read parity
+# sampling is added in a later phase.
+verify:
+  mode: shadow-read
+  parity_threshold: 0.999
+  sample_rate: 0.05
+
+canary:
+  steps: [1, 5, 25, 100]
+  bake_seconds: 120
+
+slo:
+  max_p99_latency_ms: 50
+  max_error_rate_pct: 0.1
+  min_parity: 0.999
+
+# CONTRACT: drop the now-unused legacy column. Idempotent (IF EXISTS).
+contract:
+  - "ALTER TABLE catalog_product DROP COLUMN IF EXISTS legacy_shipping"
+
+# ROLLBACK: undo the expand if the canary breaches the SLO before cutover.
+# Idempotent (IF EXISTS) so a resume mid-rollback is safe.
+rollback:
+  - "DROP INDEX IF EXISTS idx_cp_shipping"
+  - "ALTER TABLE catalog_product DROP COLUMN IF EXISTS shipping_class"
+
+on_failure: rollback
