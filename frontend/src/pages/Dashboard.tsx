@@ -110,7 +110,7 @@ export default function Dashboard() {
 
   useEffect(() => { fetchMigrations() }, [fetchMigrations])
 
-  const activeCount = useMemo(() => migrations.filter(m => !m.terminal).length, [migrations])
+  const activeCount = useMemo(() => (migrations ?? []).filter(m => !m.terminal).length, [migrations])
 
   useEffect(() => {
     if (activeCount > 0) {
@@ -122,9 +122,9 @@ export default function Dashboard() {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [activeCount, fetchMigrations])
 
-  const active = useMemo(() => migrations.filter(m => !m.terminal), [migrations])
-  const completed = useMemo(() => migrations.filter(m => m.state === 'Done'), [migrations])
-  const rolledBack = useMemo(() => migrations.filter(m => m.state === 'RolledBack'), [migrations])
+  const active = useMemo(() => (migrations ?? []).filter(m => !m.terminal), [migrations])
+  const completed = useMemo(() => (migrations ?? []).filter(m => m.state === 'Done'), [migrations])
+  const rolledBack = useMemo(() => (migrations ?? []).filter(m => m.state === 'RolledBack'), [migrations])
   const total = completed.length + rolledBack.length
   const successRate = total > 0 ? Math.round((completed.length / total) * 100) : 0
 
@@ -133,9 +133,10 @@ export default function Dashboard() {
   const sparkFailed = useMemo(() => rolledBack.slice(0, 12).map((_, i) => Math.min(3, rolledBack.length - i)), [rolledBack])
 
   const filtered = useMemo(() => {
-    if (!search) return migrations
+    const list = migrations ?? []
+    if (!search) return list
     const q = search.toLowerCase()
-    return migrations.filter(m =>
+    return list.filter(m =>
       m.plan_id.toLowerCase().includes(q) ||
       m.state.toLowerCase().includes(q) ||
       m.migration_id.toLowerCase().includes(q)
@@ -251,7 +252,7 @@ export default function Dashboard() {
       <div className="stats-grid" role="group" aria-label="Migration statistics">
         <div className="stat-card fade-in" style={{ animationDelay: '0.05s' }}>
           <div className="stat-label">Total</div>
-          <StatNumber value={migrations.length} />
+          <StatNumber value={(migrations ?? []).length} />
           <Sparkline data={sparkDone} color="#818cf8" />
         </div>
         <div className="stat-card fade-in" style={{ animationDelay: '0.1s' }}>
@@ -309,7 +310,7 @@ export default function Dashboard() {
         <div className="loading" aria-busy="true">
           <div className="skeleton" style={{ width: '100%', height: 200 }} />
         </div>
-      ) : migrations.length === 0 ? (
+      ) : (migrations ?? []).length === 0 ? (
         <div className="empty-state fade-in">
           <div className="empty-icon" aria-hidden="true">⬡</div>
           <h3>No migrations yet</h3>
