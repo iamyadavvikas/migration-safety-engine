@@ -7,6 +7,7 @@ import { POLL_INTERVAL_MS } from '../lib/constants'
 import type { MigrationRecord } from '../types'
 import { STATE_COLORS, STATE_LABELS, STATE_FLOW } from '../types'
 import StateMachineGraph from '../components/StateMachineGraph'
+import MetricsPanel from '../components/MetricsPanel'
 
 export default function MigrationDetail() {
   const { id } = useParams<{ id: string }>()
@@ -266,6 +267,9 @@ export default function MigrationDetail() {
               </div>
             </div>
           </div>
+
+          {/* Real-time Metrics */}
+          <MetricsPanel migrationId={record.migration_id} planId={record.plan_id} isLive={!!isLive} />
 
           <div className="card fade-in" style={{ animationDelay: '0.2s' }}>
             <div className="card-header">Actions</div>

@@ -476,6 +476,42 @@ a:hover { color: #a5b4fc; }
 }
 
 /* ============================================================
+   Metrics Grid — Prometheus Charts
+   ============================================================ */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.metric-chart-card {
+  background: rgba(9, 9, 11, 0.4);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  transition: border-color 0.2s ease;
+}
+
+.metric-chart-card:hover {
+  border-color: rgba(99, 102, 241, 0.2);
+}
+
+.metric-chart-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
    Tables — Clean Spacious Rows
    ============================================================ */
 .table-wrapper {
