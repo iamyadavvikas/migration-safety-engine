@@ -30,9 +30,9 @@ export default function StateMachineGraph({ currentState }: Props) {
     svg.selectAll('*').remove()
 
     const height = 160
-    const nodeW = 110
+    const nodeW = 100
     const nodeH = 40
-    const gap = 8
+    const gap = 10
 
     const nodes: Node[] = STATE_FLOW.map((s, i) => ({
       id: s,
@@ -145,7 +145,7 @@ export default function StateMachineGraph({ currentState }: Props) {
         State Machine Flow
       </div>
       <div style={{ overflowX: 'auto', padding: '8px 0' }}>
-        <svg ref={svgRef} width={900} height={160} style={{ display: 'block', margin: '0 auto', minWidth: 900 }} />
+        <svg ref={svgRef} width={900} height={160} style={{ display: 'block', margin: '0 auto', minWidth: 850 }} />
       </div>
     </div>
   )

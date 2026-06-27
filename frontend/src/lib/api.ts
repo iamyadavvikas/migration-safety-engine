@@ -10,7 +10,9 @@ class ApiClient {
   }
 
   async getMigration(id: string): Promise<MigrationRecord> {
-    const res = await fetch(`${this.base}/migrations/${id}`)
+    const res = await fetch(`${this.base}/migrations/${id}`, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
     if (!res.ok) throw new Error(`get migration: ${res.status}`)
     return res.json()
   }

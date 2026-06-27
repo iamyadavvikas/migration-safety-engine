@@ -184,6 +184,18 @@ func (s *server) listMigrations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) getMigration(w http.ResponseWriter, r *http.Request) {
+	// If this is a browser navigation (no X-Requested-With header), serve the SPA
+	if r.Header.Get("X-Requested-With") != "XMLHttpRequest" {
+		// Check if it's a browser request (Accept: text/html)
+		if strings.Contains(r.Header.Get("Accept"), "text/html") {
+			distFS, err := fs.Sub(frontend.Assets, "dist")
+			if err == nil {
+				http.ServeFileFS(w, r, distFS, "index.html")
+				return
+			}
+		}
+	}
+
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "bad id", http.StatusBadRequest)
