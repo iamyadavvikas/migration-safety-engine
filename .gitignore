@@ -17,5 +17,8 @@ frontend/dist/
 frontend/.env
 frontend/.env.local
 
+# Internal docs (not public)
+/docs/
+
 # Temp
 /tmp/
