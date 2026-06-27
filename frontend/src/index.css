@@ -341,7 +341,6 @@ textarea { resize: vertical; min-height: 300px; }
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow: hidden;
   margin-bottom: 24px;
 }
 

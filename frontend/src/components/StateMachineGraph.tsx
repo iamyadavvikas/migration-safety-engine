@@ -145,7 +145,7 @@ export default function StateMachineGraph({ currentState }: Props) {
         State Machine Flow
       </div>
       <div style={{ overflowX: 'auto', padding: '8px 0' }}>
-        <svg ref={svgRef} width={900} height={160} style={{ display: 'block', margin: '0 auto', minWidth: 850 }} />
+        <svg ref={svgRef} width={920} height={160} style={{ display: 'block', margin: '0 auto', minWidth: 920 }} />
       </div>
     </div>
   )
