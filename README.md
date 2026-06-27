@@ -178,17 +178,20 @@ rollback scripts but no canary. Atlas has linting but no runtime safety.
 
 ## Screenshots
 
-| Grafana Dashboard | Prometheus Metrics |
-|---|---|
-| ![Grafana Dashboard](screenshots/grafana-dashboard-2.png) | ![Backfill Metrics](screenshots/prometheus-backfill-metrics.png) |
+### Dashboard
+![Dashboard](screenshots/dashboard.png)
 
-| Auto-Rollback Detection | 
-|---|---|
-| ![Rollback Metric](screenshots/prometheus-rollback-metric.png) |
+### Migration Detail — Live Prometheus Charts
+![Migration Detail](screenshots/migration-detail.png)
 
-| Architecture Overview |
-|---|---|
-| ![Architecture](screenshots/architecture-overview.svg) |
+### New Migration Plan
+![New Plan](screenshots/new-plan.png)
+
+### Drift Scan
+![Drift Scan](screenshots/drift-scan.png)
+
+### Architecture Overview
+![Architecture](screenshots/architecture-overview.svg)
 ---
 
 ## Quick Start
