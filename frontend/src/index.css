@@ -1046,13 +1046,13 @@ input[type="checkbox"]:checked {
 input[type="checkbox"]:checked::after {
   content: '';
   position: absolute;
-  left: 2px;
-  top: -1px;
+  left: 50%;
+  top: 50%;
   width: 4px;
   height: 7px;
   border: solid white;
   border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
+  transform: translate(-50%, -60%) rotate(45deg);
 }
 
 input[type="checkbox"]:indeterminate {
@@ -1063,11 +1063,12 @@ input[type="checkbox"]:indeterminate {
 input[type="checkbox"]:indeterminate::after {
   content: '';
   position: absolute;
-  left: 2px;
-  top: 4px;
+  left: 50%;
+  top: 50%;
   width: 6px;
   height: 1.5px;
   background: white;
+  transform: translate(-50%, -50%);
 }
 
 input[type="checkbox"]:focus-visible {
