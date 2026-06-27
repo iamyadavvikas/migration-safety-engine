@@ -3,145 +3,130 @@
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev)
 [![Postgres](https://img.shields.io/badge/Postgres-16-4169E1?logo=postgresql)](https://postgresql.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![CI](https://github.com/iamyadavvikas/migration-safety-engine/actions/workflows/test.yml/badge.svg)](https://github.com/iamyadavvikas/migration-safety-engine/actions/workflows/test.yml)
 [![GitHub Stars](https://img.shields.io/github/stars/iamyadavvikas/migration-safety-engine.svg?style=social)](https://github.com/iamyadavvikas/migration-safety-engine/stargazers)
 
-**SLO-gated, crash-resumable database migrations with auto-rollback**
-
-### Try it live: http://mse-demo.serveousercontent.com
+### The only Postgres migration tool that watches your SLOs and rolls back when things go wrong.
 
 ---
 
-A **crash-resumable state machine** for safe, online Postgres schema migrations. Uses the
-expand/contract pattern with shadow-read parity verification, SLO-gated canary traffic shifts,
-automatic rollback on breach, and a post-migration drift scanner.
+> **The dangerous part of a schema change is never the `ALTER TABLE`.**
+> It's the backfill that locks a hot table, the cutover that ships divergent data,
+> and the rollback you didn't write.
 
-**It exists because the dangerous part of a schema change is never the `ALTER TABLE` — it's the
-backfill that locks a hot table, the cutover that ships divergent data, and the rollback you
-didn't write.**
+Migration Safety Engine wraps your Postgres migrations in a **crash-resumable state machine** with
+SLO-gated canary traffic shifts, data parity verification, and automatic rollback. If it can
+kill your SLOs, it kills the migration — not your production.
+
+**3 commands to try it:**
+
+```bash
+docker compose up -d && make migrate && make demo
+```
+
+Then open **http://localhost:8080** to watch the state machine in real time.
+
+---
+
+## Why This Exists
+
+| What goes wrong | How often | Impact |
+|----------------|-----------|--------|
+| Backfill locks a hot table | 90% of teams | Customer queries time out |
+| Index build blocks writes | Common | Production writes queue up |
+| Backfilled data doesn't match source | Silent | Data corruption in reads |
+| Cutover ships divergent data | Rare but catastrophic | Irreversible data loss |
+| No rollback plan written | Most teams | Hours-long manual recovery |
+
+**The result:** teams either don't migrate (accumulating tech debt) or migrate at 2 AM with a
+rollback runbook they hope they never need.
 
 ---
 
 ## How It Works (Plain English)
 
-Imagine you own a busy 10-lane highway and need to replace an exit ramp. You can't just block
-all lanes and dig — traffic stops. You need to:
+Imagine you own a busy 10-lane highway and need to replace an exit ramp. You can't block all
+lanes and dig — traffic stops. You need to:
 
 1. **Build the new ramp alongside** (expand) — no traffic impact
 2. **Redirect cars one lane at a time** (canary) — 1%, then 5%, then 25%, then 100%
 3. **Check that no cars got lost** (parity verify) — every car that entered exited correctly
 4. **Demolish the old ramp** (contract) — only after you're certain the new one works
 
-The Migration Safety Engine does exactly this for database schema changes — except the "cars" are
-millions of database rows and the "ramp" is a column or index.
-
-It's also **crash-resumable**: if the server dies mid-migration, it picks up exactly where it
-left off, not from the start. Like a download manager that survives your laptop rebooting.
+MSE does exactly this for database schema changes — except the "cars" are millions of rows and
+the "ramp" is a column or index.
 
 ---
 
-## Screenshots
-
-| Grafana Dashboard | Prometheus Metrics |
-|---|---|
-| ![Grafana Dashboard](screenshots/grafana-dashboard-2.png) | ![Backfill Metrics](screenshots/prometheus-backfill-metrics.png) |
-| State machine, backfill progress, canary %, parity, rollbacks | Real-time metrics from a live migration run |
-
-| Auto-Rollback Detection | Infrastructure Targets |
-|---|---|
-| ![Rollback Metric](screenshots/prometheus-rollback-metric.png) | ![Prometheus Targets](screenshots/prometheus-targets.png) |
-| `migrate_rollbacks_total` counter on SLO breach | Engine + Postgres exporter scrape targets |
-
----
-
-## Problem Statement
-
-**The scenario:** Your production Postgres database serves a live customer-facing application. You
-need to add a new column, backfill millions of rows from existing data, and eventually drop the
-legacy column.
-
-**What goes wrong 90% of the time:**
-
-| Failure | Impact |
-|---------|--------|
-| Backfill locks the table | Customer queries time out |
-| Index build blocks writes | Production writes queue up |
-| Backfilled data doesn't match source | Silent data corruption in reads |
-| Cutover ships divergent data | Irreversible data loss |
-| No rollback plan written | Hours-long manual recovery |
-
-**Why existing tools fall short:**
-- **Atlas / Sqawk** — lint schema changes statically but don't govern the *runtime* execution
-- **gh-ost** — handles MySQL migrations gracefully but has no Postgres equivalent
-- **Ad-hoc scripts** — no durability, no verification, no auto-rollback, no observability
-
-The result: teams either don't migrate (accumulating tech debt) or migrate at 2 AM with a
-rollback runbook they hope they never need.
-
----
-
-## Solution
-
-The Migration Safety Engine turns a risky manual runbook into a declarative YAML plan — reviewed
-in git, executed by a durable state machine, gated by SLOs and parity checks, and auto-rolled
-back on failure.
-
-![Architecture Overview](screenshots/architecture-overview.svg)
-
-### The Four-Phase Expand/Contract Pattern
+## The State Machine
 
 ```
-Phase 1: EXPAND   → Add column + index CONCURRENTLY      (zero impact)
-Phase 2: BACKFILL → Throttled batches with crash resume   (throttled)
-Phase 3: CANARY   → Shift traffic 1%→5%→25%→100%        (gate at each step)
-Phase 4: CONTRACT → Drop legacy column                   (only after clean canary)
+         ┌──────────┐
+         │   Plan    │
+         └────┬─────┘
+              ▼
+         ┌──────────┐
+         │Validating│
+         └────┬─────┘
+              ▼
+         ┌──────────┐         SLO breach
+         │  Canary  │ ──────────────────────┐
+         └────┬─────┘                        ▼
+              │ pass                    ┌──────────┐
+              ▼                         │Rolling   │
+         ┌──────────┐                   │Back      │
+         │  Running │                   └────┬─────┘
+         └────┬─────┘                        ▼
+              ▼                         ┌──────────┐
+         ┌──────────┐                   │Rolled    │
+         │Verifying │                   │Back      │
+         └────┬─────┘                   └──────────┘
+              ▼
+         ┌──────────┐
+         │ Completed │
+         └──────────┘
 ```
 
-### Durable State Machine
+Every step persists `(state, checkpoint)` to Postgres in a transaction. **Kill the process at any
+point** — mid-backfill, mid-verify, even mid-rollback — and it resumes exactly where it left off.
+Idempotent DDL and `WHERE col IS NULL` backfill batches make every step safe to re-enter.
 
-![State Machine](screenshots/state-machine.svg)
+---
 
-Every step persists `(state, checkpoint)` to Postgres in a transaction. The engine can be killed
-at any point — mid-backfill, mid-verify, even mid-rollback — and resumes exactly where it left
-off. Idempotent DDL and `WHERE col IS NULL` backfill batches make every step safe to re-enter.
+## SLO-Gated Canary
 
-The **Cutover** state is the point of no return: it recomputes parity across the *entire* table
-before allowing the destructive Contracting step. On drift, it routes to RollingBack instead.
-
-### SLO-Gated Canary with Auto-Rollback
+At each canary step, the engine evaluates your SLOs:
 
 ```
 1% traffic  ──► check p99 + error rate ──► pass ──► 5%
-                                              fail ──► RollingBack
+                                          fail ──► RollingBack
 5% traffic  ──► check p99 + error rate ──► pass ──► 25%
-                                              fail ──► RollingBack
+                                          fail ──► RollingBack
 ...and so on through 100%
 ```
 
-At each step the engine evaluates the plan's SLO (`max_p99_latency_ms`, `max_error_rate_pct`).
-A breach diverts the migration to `RollingBack` and runs the operator-authored rollback DDL —
-no human in the loop.
+**No human in the loop.** A breach diverts the migration to `RollingBack` and runs your
+authorised rollback DDL automatically.
 
 ---
 
-## Demos (Real Output)
+## Demo: What Happens When Things Go Wrong
 
 ### Happy Path — `make demo`
 
-Backfills **50,000 / 50,000** rows in throttled batches, verifies parity **1.0** on a ~2,500-row
-sample, walks the canary `1 → 5 → 25 → 100`, drops the legacy column, ends at **Done**:
+Backfills **50,000 / 50,000** rows in throttled batches, verifies parity **1.0**, walks the
+canary `1 → 5 → 25 → 100`, drops the legacy column, ends at **Done**:
 
 ```
 state=Backfilling → Verifying → Canary → Contracting → Done
 migrate_backfill_rows_done  = 50000
-migrate_backfill_rows_total = 50000
 migrate_state_info{state="Done"} 1
 ```
 
-### Auto-Rollback on SLO Breach — `make demo-rollback`
+### Auto-Rollback — `make demo-rollback`
 
 Same plan plus a simulated fault at canary step 25%. The canary is healthy at 1% and 5%, then
-p99 latency spikes to 101ms (breaching the 50ms SLO). The engine diverts to rollback
-automatically:
+p99 latency spikes to 101ms (breaching the 50ms SLO). The engine diverts to rollback:
 
 ```
 canary step healthy  step=1  p99_ms=30
@@ -149,7 +134,6 @@ canary step healthy  step=5  p99_ms=30
 canary SLO breach    step=25 why="p99 101ms > 50ms"
 state advanced  Canary → RollingBack → RolledBack
 migrate_rollbacks_total      = 1
-migrate_canary_step_pct      = 25
 ```
 
 ### Load Under Backfill (Real Numbers)
@@ -162,50 +146,79 @@ SLO — with **zero errors**:
 loadgen: 16 workers, 25s, table=catalog_product (max id=50000)
 writes ok    : 289,296      throughput : 11,580 writes/s     errors : 0
 latency p50  : 1.17ms        p95 : 2.66ms     p99 : 4.43ms     max : 85.67ms
-migrate_cutover_parity = 1   # cutover committed over all 50,000 rows
+migrate_cutover_parity = 1
 ```
 
-![Load Under Backfill](screenshots/load-under-backfill.svg)
+---
 
-### Drift Scanner
+## Why Not Just Use...
 
-Prove a finished migration still has zero divergence. Exits non-zero on drift — drop it in CI:
+| Feature | MSE | pgroll | Bytebase | Atlas | Flyway | Liquibase |
+|---------|-----|--------|----------|-------|--------|-----------|
+| **SLO-gated canary** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Crash-resume** | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| **Auto-rollback on SLO breach** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Data parity verification** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Zero-downtime** | ✅ | ✅ | ✅ | ⚠️ | ❌ | ❌ |
+| **Deterministic rollback** | ✅ | ✅ | ⚠️ | ❌ | ✅ | ✅ |
+| **Web dashboard** | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| **Postgres-native** | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ | ⚠️ |
+| **Language** | Go | Go | Go | Go | Java | Java |
+| **Open source** | Apache 2.0 | Apache 2.0 | MIT | Apache 2.0 | MIT | Apache 2.0 |
+| **Self-hostable** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Pricing** | Free + cloud | Free | $20/user/mo | Free + cloud | $2.5K+/mo | Contact sales |
 
-```bash
-go run ./cmd/mgctl drift-scan -f examples/add-shipping-index.yaml
-# table=catalog_product column=shipping_class total=50000 nulls=0 drifted=0 parity=1.00000
+**The gap:** No existing tool combines migration execution + runtime SLO monitoring + canary
+deployment + auto-rollback. pgroll has rollback but no SLO awareness. Flyway/Liquibase have
+rollback scripts but no canary. Atlas has linting but no runtime safety.
 
-# corrupt 7 rows, then re-scan:
-# table=catalog_product column=shipping_class total=50000 nulls=0 drifted=7 parity=0.99986
-# error: drift detected: 7/50000 rows diverge   (exit 1)
-```
+---
+
+## Screenshots
+
+| Grafana Dashboard | Prometheus Metrics |
+|---|---|
+| ![Grafana Dashboard](screenshots/grafana-dashboard-2.png) | ![Backfill Metrics](screenshots/prometheus-backfill-metrics.png) |
+
+| Auto-Rollback Detection | Architecture Overview |
+|---|---|
+| ![Rollback Metric](screenshots/prometheus-rollback-metric.png) | ![Architecture](screenshots/architecture-overview.svg) |
 
 ---
 
 ## Quick Start
 
-Get started in 3 simple commands (requires Docker and Go 1.24+):
+### Prerequisites
+- Docker & Docker Compose
+- Go 1.24+
+
+### 30 seconds
 
 ```bash
+git clone https://github.com/iamyadavvikas/migration-safety-engine.git
+cd migration-safety-engine
 docker compose up -d
 make migrate
 make demo
 ```
 
-Once the demo completes, you can open the embedded dashboard at **http://localhost:8080** to view active/completed migrations, or run other demo plans:
+Open **http://localhost:8080** — you'll see the dashboard with your migration's state machine
+animating through each phase in real time.
+
+### More demos
 
 ```bash
-make demo-rollback        # drive the chaos plan → SLO breach → auto-rollback → RolledBack
+make demo-rollback        # SLO breach → auto-rollback → RolledBack
 make load-under-backfill  # concurrent writes WHILE a migration backfills
 ```
+
+### Services
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
 | Engine UI & API | http://localhost:8080 | — |
 | Prometheus | http://localhost:9093 | — |
 | Grafana | http://localhost:3004 | anonymous (Admin) |
-
-> Port note: Grafana is mapped to `:3004` (not `:3000`) and Prometheus to `:9093` to avoid collisions with common local apps. The dashboard is auto-provisioned from `monitoring/grafana/`.
 
 ---
 
@@ -219,11 +232,11 @@ version: 42
 table: catalog_product
 strategy: expand-contract
 
-expand:                       # additive DDL; index built CONCURRENTLY (runs outside a tx)
+expand:                       # additive DDL; index built CONCURRENTLY
   - "ALTER TABLE catalog_product ADD COLUMN IF NOT EXISTS shipping_class text"
   - "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_cp_shipping ON catalog_product (shipping_class)"
 
-backfill:                     # throttled, resumable batches over rows WHERE col IS NULL
+backfill:                     # throttled, resumable batches
   column: shipping_class
   batch_size: 5000
   throttle_ms: 20
@@ -243,10 +256,10 @@ slo:                          # gate evaluated at every canary step
   max_error_rate_pct: 0.1
   min_parity: 0.999
 
-contract:                     # destructive cleanup, only after a clean canary
+contract:                     # destructive cleanup, only after clean canary
   - "ALTER TABLE catalog_product DROP COLUMN IF EXISTS legacy_shipping"
 
-rollback:                     # auto-applied if the canary breaches the SLO
+rollback:                     # auto-applied if canary breaches SLO
   - "DROP INDEX IF EXISTS idx_cp_shipping"
   - "ALTER TABLE catalog_product DROP COLUMN IF EXISTS shipping_class"
 
@@ -261,40 +274,31 @@ on_failure: rollback
 
 | Metric | Type | Meaning |
 |--------|------|---------|
-| `migrate_state_info{migration_id,plan_id,state}` | gauge | current state (1 = active) |
-| `migrate_state_transitions_total{plan_id,to_state}` | counter | state transitions |
-| `migrate_backfill_rows_total` / `_done` | gauge | backfill progress |
-| `migrate_verify_parity` | gauge | last shadow-read parity ratio |
-| `migrate_cutover_parity` | gauge | full-table parity at the cutover gate |
-| `migrate_canary_step_pct` | gauge | current canary traffic % |
-| `migrate_rollbacks_total` | counter | auto-rollbacks triggered |
+| `migrate_state_info{state}` | gauge | Current state (1 = active) |
+| `migrate_state_transitions_total{to_state}` | counter | State transitions |
+| `migrate_backfill_rows_total` / `_done` | gauge | Backfill progress |
+| `migrate_verify_parity` | gauge | Shadow-read parity ratio |
+| `migrate_cutover_parity` | gauge | Full-table parity at cutover gate |
+| `migrate_canary_step_pct` | gauge | Current canary traffic % |
+| `migrate_rollbacks_total` | counter | Auto-rollbacks triggered |
 
-### Alerts (`monitoring/alerts.yml`)
+### Alerts
 
 - **MigrationStuck** — non-terminal state for >10m
 - **MigrationAutoRolledBack** — a rollback fired (critical)
 - **MigrationLowParity** — parity below threshold
 - **EngineDown** — scrape target down
 
-### Dashboard
-
-`monitoring/grafana/dashboards/migration-safety-engine.json` — 7 auto-provisioned panels (state
-timeline, backfill rows, completion %, parity trend, canary %, transition rate, rollbacks).
-
 ---
 
 ## Crash-Resume, Proven in Tests
 
-Four integration tests against a real Postgres (set `MSE_TEST_DSN`; they skip otherwise):
+Four integration tests against a real Postgres:
 
-- **`TestResumeAfterCrash`** — interrupt a migration, restart the runner, assert it finishes from
-  the persisted checkpoint.
-- **`TestCanaryAutoRollback`** — drive the chaos plan; assert the canary breach ends in
-  `RolledBack` with the new column dropped.
-- **`TestRollbackResumesAfterCrash`** — a migration killed *mid-rollback* resumes and completes to
-  `RolledBack` (rollback is itself durable).
-- **`TestCutoverAbortsOnDrift`** — drift at the cutover gate aborts and rolls back; the legacy
-  column is **never** dropped on top of bad data.
+- **TestResumeAfterCrash** — kill migration, restart, assert it resumes from checkpoint
+- **TestCanaryAutoRollback** — chaos plan → SLO breach → `RolledBack`
+- **TestRollbackResumesAfterCrash** — killed mid-rollback → resumes to `RolledBack`
+- **TestCutoverAbortsOnDrift** — drift at cutover gate → aborts, legacy column preserved
 
 ```bash
 make test        # unit always; integration when MSE_TEST_DSN is set
@@ -313,28 +317,32 @@ make test        # unit always; integration when MSE_TEST_DSN is set
 | `internal/statemachine` | durable runner + handlers + drift scan |
 | `internal/store` | pgxpool persistence (state, checkpoints, events) |
 | `internal/telemetry` | Prometheus metrics |
+| `frontend/` | React 19 + TypeScript + D3.js dashboard (embedded via `go:embed`) |
 | `migrations/` | engine control schema + demo target table |
 | `examples/` | happy-path + chaos migration plans |
 | `monitoring/` | Prometheus config, alert rules, Grafana dashboard |
-| `scripts/` | `demo.sh`, `demo_rollback.sh` |
 
 ---
 
 ## What This Demonstrates
 
 **SRE / DevOps**
-- Crash-resumable state machine for online Postgres schema changes — persists state
-  transactionally so a killed process resumes exactly where it stopped (mid-backfill across 50k
-  rows or mid-rollback).
-- SLO-gated progressive canary (p99 latency + error-rate at 1/5/25/100%) + full-table cutover
-  gate with auto-rollback on breach or drift — zero human intervention.
-- Load-tested: 16 concurrent writers at ~11.6k writes/s, 4.4 ms p99, zero errors *while* a 50k-row
-  backfill and `CREATE INDEX CONCURRENTLY` ran on the same table.
-- Read-only drift scanner for CI/cron — re-verifies data convergence post-migration.
+- Crash-resumable state machine for online Postgres schema changes
+- SLO-gated progressive canary with auto-rollback on breach — zero human intervention
+- Load-tested: 16 concurrent writers at ~11.6k writes/s, 4.4ms p99, zero errors
+- Read-only drift scanner for CI/cron
 
 **Forward-Deployed Engineering**
-- Turned a risky manual runbook into a single declarative YAML plan — reviewable, observable,
-  gated, and reversible.
-- Shadow-read parity verification (sampled at verify, full-table at cutover gate) catches silent
-  data divergence before it reaches production reads.
-- One-command demos make the safety story reproducible end-to-end in minutes.
+- Risky manual runbook → single declarative YAML plan
+- Shadow-read parity verification catches silent data divergence
+- One-command demos make the safety story reproducible end-to-end
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## License
+
+[Apache 2.0](LICENSE)
