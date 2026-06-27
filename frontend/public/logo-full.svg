@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" fill="none">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+  </defs>
+  <!-- Hexagon mark -->
+  <path d="M32 2L57.712 17v30L32 62 6.288 47V17z" fill="url(#g)"/>
+  <path d="M20 32l6 6L42 22" stroke="#fff" stroke-width="3.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Wordmark -->
+  <text x="72" y="28" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="700" fill="#fafafa" letter-spacing="-0.03em">Migration</text>
+  <text x="72" y="50" font-family="Inter, system-ui, sans-serif" font-size="17" font-weight="500" fill="#a1a1aa" letter-spacing="-0.02em">Safety Engine</text>
+</svg>

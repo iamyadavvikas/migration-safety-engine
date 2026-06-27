@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" fill="none">
+  <defs>
+    <linearGradient id="logo-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+  </defs>
+  <!-- Hexagon mark -->
+  <path d="M24 2L44.784 14v24L24 46 3.216 38V14z" fill="url(#logo-grad)"/>
+  <path d="M15 24l5 5L33 16" stroke="#fff" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Wordmark -->
+  <text x="54" y="19" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#fafafa" letter-spacing="-0.02em">Migration</text>
+  <text x="54" y="37" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="500" fill="#a1a1aa" letter-spacing="-0.02em">Safety Engine</text>
+</svg>

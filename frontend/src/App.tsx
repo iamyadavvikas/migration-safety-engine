@@ -15,7 +15,16 @@ export default function App() {
             <a href="#main-content" className="skip-link">Skip to main content</a>
             <nav className="nav" role="navigation" aria-label="Main navigation">
               <NavLink to="/" className="nav-brand" end>
-                <span className="nav-logo" aria-hidden="true">⬡</span>
+                <svg className="nav-logo" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
+                  <defs>
+                    <linearGradient id="nav-g" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#818cf8"/>
+                      <stop offset="100%" stopColor="#4f46e5"/>
+                    </linearGradient>
+                  </defs>
+                  <path d="M16 1L29.856 9v18L16 31 2.144 27V9z" fill="url(#nav-g)"/>
+                  <path d="M10 16.5l3.5 3.5L22 11.5" stroke="#fff" stroke-width="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
                 MSE
                 <span className="nav-pulse" title="Engine online" aria-label="Engine online" />
               </NavLink>

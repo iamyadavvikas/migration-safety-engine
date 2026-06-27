@@ -204,16 +204,15 @@ a:hover { color: #a5b4fc; }
 }
 
 .nav-logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   width: 28px;
   height: 28px;
-  background: var(--gradient-accent);
-  border-radius: 7px;
-  font-size: 0.8rem;
-  color: white;
-  box-shadow: 0 0 16px var(--accent-glow);
+  filter: drop-shadow(0 0 8px var(--accent-glow));
+  transition: filter 0.2s ease;
+}
+
+.nav-brand:hover .nav-logo {
+  filter: drop-shadow(0 0 14px var(--accent-glow));
 }
 
 .nav-pulse {

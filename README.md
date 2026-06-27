@@ -1,12 +1,14 @@
-# Migration Safety Engine
+<p align="center">
+  <img src="frontend/public/logo-full.svg" alt="Migration Safety Engine" width="320"/>
+</p>
 
-[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev)
-[![Postgres](https://img.shields.io/badge/Postgres-16-4169E1?logo=postgresql)](https://postgresql.org)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![CI](https://github.com/iamyadavvikas/migration-safety-engine/actions/workflows/test.yml/badge.svg)](https://github.com/iamyadavvikas/migration-safety-engine/actions/workflows/test.yml)
-[![GitHub Stars](https://img.shields.io/github/stars/iamyadavvikas/migration-safety-engine.svg?style=social)](https://github.com/iamyadavvikas/migration-safety-engine/stargazers)
+<h3 align="center" style="color:#a1a1aa; font-weight:500; margin-top:-8px">SLO-gated canary migrations for Postgres. Automatic rollback when things go wrong.</h3>
 
-### The only Postgres migration tool that watches your SLOs and rolls back when things go wrong.
+<p align="center">
+  <a href="https://github.com/iamyadavvikas/migration-safety-engine/actions/workflows/test.yml"><img src="https://github.com/iamyadavvikas/migration-safety-engine/actions/workflows/test.yml/badge.svg" alt="CI"/></a>
+  <a href="https://github.com/iamyadavvikas/migration-safety-engine/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"/></a>
+  <a href="https://github.com/iamyadavvikas/migration-safety-engine/stargazers"><img src="https://img.shields.io/github/stars/iamyadavvikas/migration-safety-engine.svg?style=social" alt="Stars"/></a>
+</p>
 
 ---
 
