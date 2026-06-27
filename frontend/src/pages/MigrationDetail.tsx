@@ -124,8 +124,10 @@ export default function MigrationDetail() {
                       <td>
                         {i < currentIdx ? (
                           <span style={{ color: 'var(--success)' }}>✓ Passed</span>
-                        ) : i === currentIdx ? (
+                        ) : i === currentIdx && isLive ? (
                           <span style={{ color: 'var(--warning)' }}>⟳ Current</span>
+                        ) : i === currentIdx && !isLive ? (
+                          <span style={{ color: 'var(--success)' }}>✓ Complete</span>
                         ) : (
                           <span style={{ color: 'var(--text-muted)' }}>— Pending</span>
                         )}

@@ -10,7 +10,7 @@ export default function App() {
       <div className="app">
         <nav className="nav">
           <a href="/" className="nav-brand">
-            <span className="nav-logo">⬡</span> MSE
+            <span className="nav-logo">⬡</span> Migration Safety Engine
           </a>
           <div className="nav-links">
             <a href="/">Migrations</a>
