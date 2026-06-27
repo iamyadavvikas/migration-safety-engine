@@ -58,6 +58,18 @@ class ApiClient {
     const res = await fetch(`${this.base}/migrations/${id}/abort`, { method: 'POST' })
     if (!res.ok) throw new Error(`abort migration: ${res.status}`)
   }
+
+  async deleteMigrations(ids: string[]): Promise<void> {
+    const res = await fetch(`${this.base}/migrations`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`delete migrations: ${res.status} ${text}`)
+    }
+  }
 }
 
 export const api = new ApiClient()

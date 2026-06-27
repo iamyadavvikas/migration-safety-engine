@@ -67,6 +67,7 @@ func main() {
 	mux.HandleFunc("GET /migrations/{id}", srv.getMigration)
 	mux.HandleFunc("POST /reset-demo", srv.resetDemo)
 	mux.HandleFunc("POST /migrations/{id}/abort", srv.abortMigration)
+	mux.HandleFunc("DELETE /migrations", srv.deleteMigrations)
 
 	distFS, err := fs.Sub(frontend.Assets, "dist")
 	if err != nil {
@@ -241,6 +242,52 @@ func (s *server) abortMigration(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.store.UpdateState(r.Context(), id, string(statemachine.StateRolledBack), true); err != nil {
 		http.Error(w, "abort: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteMigrations removes multiple terminal migrations by their IDs.
+func (s *server) deleteMigrations(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(req.IDs) == 0 {
+		http.Error(w, "no ids provided", http.StatusBadRequest)
+		return
+	}
+
+	// Safety: only allow deleting terminal (Done or RolledBack) migrations.
+	// Non-terminal migrations must be aborted first.
+	uids := make([]uuid.UUID, 0, len(req.IDs))
+	for _, raw := range req.IDs {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			http.Error(w, "bad id: "+raw, http.StatusBadRequest)
+			return
+		}
+		// Check that the migration is terminal before allowing delete.
+		rec, err := s.store.Load(r.Context(), id)
+		if errors.Is(err, store.ErrNotFound) {
+			continue // skip already-deleted
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !rec.Terminal {
+			http.Error(w, "cannot delete non-terminal migration "+id.String()+": abort it first", http.StatusConflict)
+			return
+		}
+		uids = append(uids, id)
+	}
+
+	if err := s.store.DeleteMany(r.Context(), uids); err != nil {
+		http.Error(w, "delete: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

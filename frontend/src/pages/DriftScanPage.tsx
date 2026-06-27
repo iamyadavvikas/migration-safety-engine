@@ -1,45 +1,15 @@
 import { useState } from 'react'
 import { api } from '../lib/api'
+import { useToast } from '../components/Toast'
+import { DEMO_PLAN } from '../lib/constants'
 import type { MigrationPlan, DriftReport } from '../types'
 
-const EXAMPLE_PLAN: MigrationPlan = {
-  id: 'drift-scan-example',
-  version: 1,
-  table: 'catalog_product',
-  strategy: 'expand-contract',
-  expand: [
-    'ALTER TABLE catalog_product ADD COLUMN IF NOT EXISTS shipping_class text',
-  ],
-  backfill: {
-    column: 'shipping_class',
-    batch_size: 5000,
-    throttle_ms: 20,
-    source_expr: "CASE WHEN weight < 1 THEN 'light' WHEN weight < 10 THEN 'standard' ELSE 'freight' END",
-  },
-  verify: {
-    mode: 'shadow-read',
-    parity_threshold: 0.999,
-    sample_rate: 0.05,
-  },
-  canary: {
-    steps: [1, 5, 25, 100],
-    bake_seconds: 120,
-  },
-  slo: {
-    max_p99_latency_ms: 50,
-    max_error_rate_pct: 0.1,
-    min_parity: 0.999,
-  },
-  contract: [],
-  rollback: [],
-  on_failure: 'rollback',
-}
-
 export default function DriftScanPage() {
-  const [json, setJson] = useState(JSON.stringify(EXAMPLE_PLAN, null, 2))
+  const [json, setJson] = useState(JSON.stringify(DEMO_PLAN, null, 2))
   const [error, setError] = useState('')
   const [scanning, setScanning] = useState(false)
   const [report, setReport] = useState<DriftReport | null>(null)
+  const { toast } = useToast()
 
   const handleScan = async () => {
     setError('')
@@ -49,47 +19,77 @@ export default function DriftScanPage() {
       const plan = JSON.parse(json) as MigrationPlan
       const result = await api.driftScan(plan)
       setReport(result)
+      toast('success', 'Drift scan completed')
     } catch (e) {
       setError((e as Error).message)
+      toast('error', (e as Error).message)
     } finally {
       setScanning(false)
     }
   }
 
   return (
-    <div>
+    <div className="fade-in">
       <div className="page-header">
         <div>
           <h1>Drift Scan</h1>
           <p>Read-only parity check against the target table</p>
         </div>
-        <button className="btn btn-primary" onClick={handleScan} disabled={scanning}>
+        <button className="btn btn-primary" onClick={handleScan} disabled={scanning} aria-label="Run drift scan">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+            <circle cx="7" cy="7" r="5"/><path d="M11 11l3 3"/>
+          </svg>
           {scanning ? 'Scanning...' : 'Run Scan'}
         </button>
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <div className="error-banner scale-in" role="alert">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 10.5a.75.75 0 110-1.5.75.75 0 010 1.5zM8.75 4.75a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z"/>
+          </svg>
+          {error}
+        </div>
+      )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: report ? '1fr 1fr' : '1fr', gap: 24 }}>
+      <div className="drift-scan-grid" style={{ display: 'grid', gridTemplateColumns: report ? '1fr 1fr' : '1fr', gap: 24 }}>
         <div className="card">
-          <div className="card-header">Plan Configuration</div>
+          <div className="card-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                <path d="M5 3l-3 5 3 5M11 3l3 5-3 5M9 1L7 15"/>
+              </svg>
+              Plan Configuration
+            </div>
+          </div>
           <div className="card-body">
             <div className="form-group">
+              <label htmlFor="drift-plan-json">Migration Plan (JSON)</label>
               <textarea
+                id="drift-plan-json"
                 value={json}
                 onChange={e => setJson(e.target.value)}
-                style={{ minHeight: 350 }}
+                style={{ minHeight: 350, fontSize: '0.85rem', lineHeight: 1.7, tabSize: 2 }}
+                spellCheck={false}
               />
             </div>
           </div>
         </div>
 
         {report && (
-          <div>
+          <div className="fade-in">
             <div className="card">
-              <div className="card-header">Drift Report</div>
+              <div className="card-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                    <path d="M2 12l4-4 3 3 5-5"/>
+                    <path d="M10 6h4v4"/>
+                  </svg>
+                  Drift Report
+                </div>
+              </div>
               <div className="card-body">
-                <div className="drift-report">
+                <div className="drift-report" role="group" aria-label="Drift scan results">
                   <div className="drift-item">
                     <div className="value" style={{ color: 'var(--info)' }}>{report.total.toLocaleString()}</div>
                     <div className="label">Total Rows</div>
@@ -117,48 +117,88 @@ export default function DriftScanPage() {
                   </div>
                 </div>
 
-                <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{
-                    flex: 1,
-                    height: 12,
-                    background: 'var(--bg-primary)',
-                    borderRadius: 6,
-                    overflow: 'hidden',
-                  }}>
-                    <div style={{
+                {/* Parity gauge bar */}
+                <div style={{ marginTop: 20 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Parity Score
+                    </span>
+                    <span style={{
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      color: report.parity >= 0.999 ? 'var(--success)' :
+                             report.parity >= 0.99 ? 'var(--warning)' : 'var(--danger)',
+                    }}>
+                      {(report.parity * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div
+                    className="progress-bar-track"
+                    role="progressbar"
+                    aria-valuenow={Math.round(report.parity * 100)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Parity score: ${(report.parity * 100).toFixed(1)}%`}
+                  >
+                    <div className="progress-bar-fill" style={{
                       width: `${Math.min(report.parity * 100, 100)}%`,
-                      height: '100%',
-                      background: report.parity >= 0.999 ? 'var(--success)' :
-                                   report.parity >= 0.99 ? 'var(--warning)' : 'var(--danger)',
-                      borderRadius: 6,
-                      transition: 'width 0.5s',
+                      background: report.parity >= 0.999 ? 'var(--gradient-success)' :
+                                  report.parity >= 0.99 ? 'var(--gradient-primary)' : 'var(--gradient-danger)',
+                      boxShadow: report.parity >= 0.999
+                        ? '0 0 12px var(--success-glow)'
+                        : report.parity >= 0.99
+                        ? '0 0 12px var(--accent-glow)'
+                        : '0 0 12px var(--danger-glow)',
                     }} />
                   </div>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', minWidth: 60 }}>
-                    {(report.parity * 100).toFixed(1)}%
-                  </span>
                 </div>
               </div>
             </div>
 
             <div className="card">
-              <div className="card-header">Details</div>
+              <div className="card-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                    <circle cx="8" cy="8" r="6"/>
+                    <path d="M8 5v3l2 2"/>
+                  </svg>
+                  Details
+                </div>
+              </div>
               <div className="card-body">
                 <div className="details-grid">
                   <div className="detail-item">
                     <label>Table</label>
-                    <span>{report.table}</span>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{report.table}</span>
                   </div>
                   <div className="detail-item">
                     <label>Column</label>
-                    <span>{report.column}</span>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{report.column}</span>
                   </div>
                   <div className="detail-item">
                     <label>Status</label>
                     <span style={{
                       color: report.drifted === 0 && report.nulls === 0 ? 'var(--success)' : 'var(--danger)',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
                     }}>
-                      {report.drifted === 0 && report.nulls === 0 ? '✓ Clean' : '✗ Drift Detected'}
+                      {report.drifted === 0 && report.nulls === 0 ? (
+                        <>
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                            <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm3.354 4.646a.5.5 0 010 .708l-4 4a.5.5 0 01-.708 0l-2-2a.5.5 0 11.708-.708L7 9.293l3.646-3.646a.5.5 0 01.708 0z"/>
+                          </svg>
+                          Clean
+                        </>
+                      ) : (
+                        <>
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                            <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 10.5a.75.75 0 110-1.5.75.75 0 010 1.5zM8.75 4.75a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z"/>
+                          </svg>
+                          Drift Detected
+                        </>
+                      )}
                     </span>
                   </div>
                 </div>

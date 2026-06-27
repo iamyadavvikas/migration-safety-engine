@@ -266,3 +266,47 @@ func (s *Store) UpdateState(ctx context.Context, id uuid.UUID, state string, ter
 	)
 	return err
 }
+
+// Delete removes a single migration and all its associated rows.
+func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DELETE FROM migration_event WHERE migration_id = $1`, id); err != nil {
+		return fmt.Errorf("delete events: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM migration_state WHERE migration_id = $1`, id); err != nil {
+		return fmt.Errorf("delete state: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM migration WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("delete migration: %w", err)
+	}
+	return tx.Commit(ctx)
+}
+
+// DeleteMany removes multiple migrations by their IDs.
+func (s *Store) DeleteMany(ctx context.Context, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Use ANY($1) for batch delete
+	if _, err := tx.Exec(ctx, `DELETE FROM migration_event WHERE migration_id = ANY($1)`, ids); err != nil {
+		return fmt.Errorf("delete events: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM migration_state WHERE migration_id = ANY($1)`, ids); err != nil {
+		return fmt.Errorf("delete state: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM migration WHERE id = ANY($1)`, ids); err != nil {
+		return fmt.Errorf("delete migration: %w", err)
+	}
+	return tx.Commit(ctx)
+}
