@@ -18,7 +18,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "9090:9090"
+      - "9093:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -31,7 +31,7 @@ services:
       # Host 3002 to avoid colliding with other local apps on :3000/:3001 (e.g. a
       # Next.js dev server and tweakresume). Grafana still listens on 3000 inside
       # the container.
-      - "3002:3000"
+      - "3004:3000"
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"

@@ -14,9 +14,32 @@ DURATION="${DURATION:-25s}"
 echo "==> resetting demo table"
 make reset-demo >/dev/null
 
+# Check if engine is running. If not, spin it up in the background.
+ENGINE_PID=""
+if ! curl -s --fail "${BASE}/healthz" >/dev/null 2>&1; then
+    echo "==> engine not running on ${BASE}, starting it in the background..."
+    # Ensure backend is built
+    go build -o bin/engine ./cmd/engine
+    # Start the engine in the background
+    bin/engine > /tmp/mse-engine.log 2>&1 &
+    ENGINE_PID=$!
+    # Wait for engine to become healthy
+    until curl -s --fail "${BASE}/healthz" >/dev/null 2>&1; do sleep 0.5; done
+    echo "    engine started (PID: ${ENGINE_PID})"
+fi
+
 echo "==> starting load: ${WORKERS} writers for ${DURATION}"
 LOG="$(mktemp -t mse-load).log"
-trap 'rm -f "$LOG" "${TMP_PLAN:-}"' EXIT
+
+cleanup() {
+    rm -f "$LOG" "${TMP_PLAN:-}"
+    if [ -n "$ENGINE_PID" ]; then
+        echo "==> stopping background engine (PID: ${ENGINE_PID})"
+        kill "$ENGINE_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
 DB_DSN="${DB_DSN:-postgres://mse:mse@localhost:5499/mse?sslmode=disable}" \
 	go run ./cmd/loadgen -workers "$WORKERS" -duration "$DURATION" >"$LOG" 2>&1 &
 LOAD_PID=$!

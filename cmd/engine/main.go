@@ -6,10 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/iamyadavvikas/migration-safety-engine/frontend"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/plan"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/statemachine"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/store"
@@ -60,7 +63,39 @@ func main() {
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("POST /plans", srv.applyPlan)
 	mux.HandleFunc("POST /drift-scan", srv.driftScan)
+	mux.HandleFunc("GET /migrations", srv.listMigrations)
 	mux.HandleFunc("GET /migrations/{id}", srv.getMigration)
+
+	distFS, err := fs.Sub(frontend.Assets, "dist")
+	if err != nil {
+		log.Error("subdist", "err", err)
+		os.Exit(1)
+	}
+	fileServer := http.FileServer(http.FS(distFS))
+
+	// Catch-all route to serve the React UI and support client-side SPA routing fallback.
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
+			path = "index.html"
+		}
+
+		f, err := distFS.Open(path)
+		if err == nil {
+			stat, err := f.Stat()
+			if err == nil && !stat.IsDir() {
+				f.Close()
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+			if err == nil {
+				f.Close()
+			}
+		}
+
+		// Fallback to index.html for React Router paths
+		http.ServeFileFS(w, r, distFS, "index.html")
+	}))
 
 	httpSrv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 
@@ -135,6 +170,15 @@ func (s *server) driftScan(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rep)
+}
+
+func (s *server) listMigrations(w http.ResponseWriter, r *http.Request) {
+	summaries, err := s.store.List(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(summaries)
 }
 
 func (s *server) getMigration(w http.ResponseWriter, r *http.Request) {

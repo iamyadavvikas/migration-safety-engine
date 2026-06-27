@@ -13,10 +13,33 @@ PLAN="examples/add-shipping-index.yaml"
 echo "==> resetting demo table"
 make reset-demo >/dev/null
 
+# Check if engine is running. If not, spin it up in the background.
+ENGINE_PID=""
+if ! curl -s --fail "${BASE}/healthz" >/dev/null 2>&1; then
+    echo "==> engine not running on ${BASE}, starting it in the background..."
+    # Ensure backend is built
+    go build -o bin/engine ./cmd/engine
+    # Start the engine in the background
+    bin/engine > /tmp/mse-engine.log 2>&1 &
+    ENGINE_PID=$!
+    # Wait for engine to become healthy
+    until curl -s --fail "${BASE}/healthz" >/dev/null 2>&1; do sleep 0.5; done
+    echo "    engine started (PID: ${ENGINE_PID})"
+fi
+
 # Bump the plan version to a unique value so CreateMigration starts a new run.
 VERSION="$(date +%s)"
 TMP_PLAN="$(mktemp -t mse-plan).yaml"
-trap 'rm -f "$TMP_PLAN"' EXIT
+
+cleanup() {
+    rm -f "$TMP_PLAN"
+    if [ -n "$ENGINE_PID" ]; then
+        echo "==> stopping background engine (PID: ${ENGINE_PID})"
+        kill "$ENGINE_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
 sed "s/^version:.*/version: ${VERSION}/" "$PLAN" > "$TMP_PLAN"
 
 echo "==> applying plan (version ${VERSION}) to ${BASE}"

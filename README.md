@@ -2,7 +2,14 @@
 
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev)
 [![Postgres](https://img.shields.io/badge/Postgres-16-4169E1?logo=postgresql)](https://postgresql.org)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/iamyadavvikas/migration-safety-engine.svg?style=social)](https://github.com/iamyadavvikas/migration-safety-engine/stargazers)
+
+**SLO-gated, crash-resumable database migrations with auto-rollback**
+
+### Try it live: http://mse-demo.serveousercontent.com
+
+---
 
 A **crash-resumable state machine** for safe, online Postgres schema migrations. Uses the
 expand/contract pattern with shadow-read parity verification, SLO-gated canary traffic shifts,
@@ -177,34 +184,28 @@ go run ./cmd/mgctl drift-scan -f examples/add-shipping-index.yaml
 
 ## Quick Start
 
-Requires Docker and Go 1.24+.
+Get started in 3 simple commands (requires Docker and Go 1.24+):
 
 ```bash
-git clone https://github.com/iamyadavvikas/migration-safety-engine.git
-cd migration-safety-engine
-
-make up          # postgres + prometheus + grafana
-make migrate     # engine control schema + demo target table (50k rows)
-make run         # start the engine on :8080 (control API + /metrics)
+docker compose up -d
+make migrate
+make demo
 ```
 
-In a second shell:
+Once the demo completes, you can open the embedded dashboard at **http://localhost:8080** to view active/completed migrations, or run other demo plans:
 
 ```bash
-make demo                 # drive the happy-path plan end-to-end → Done
 make demo-rollback        # drive the chaos plan → SLO breach → auto-rollback → RolledBack
 make load-under-backfill  # concurrent writes WHILE a migration backfills
 ```
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Prometheus | http://localhost:9090 | — |
-| Grafana | http://localhost:3002 (or :3000) | anonymous (Admin) |
-| Engine API | http://localhost:8080 | — |
+| Engine UI & API | http://localhost:8080 | — |
+| Prometheus | http://localhost:9093 | — |
+| Grafana | http://localhost:3004 | anonymous (Admin) |
 
-> Port note: Grafana is mapped to `:3002` (not `:3000`) to avoid collisions with common local
-> apps. The container still listens on `:3000` internally — Grafana's `SERVER_HTTP_PORT` is not
-> changed. The dashboard is auto-provisioned from `monitoring/grafana/`.
+> Port note: Grafana is mapped to `:3004` (not `:3000`) and Prometheus to `:9093` to avoid collisions with common local apps. The dashboard is auto-provisioned from `monitoring/grafana/`.
 
 ---
 

@@ -1,3 +1,21 @@
 bin/
 *.out
 .env
+.env.local
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.log
+.idea/
+.vscode/
+data/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# Temp
+/tmp/

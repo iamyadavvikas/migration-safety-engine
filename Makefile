@@ -4,7 +4,7 @@
 DB_DSN ?= postgres://mse:mse@localhost:5499/mse?sslmode=disable
 ENGINE_ADDR ?= :8080
 
-.PHONY: up down migrate run demo demo-rollback reset-demo test lint tidy build fmt vet load load-under-backfill
+.PHONY: up down migrate run demo demo-rollback reset-demo test lint tidy build fmt vet load load-under-backfill frontend frontend-dev frontend-build
 
 up: ## Start postgres + prometheus + grafana
 	docker compose up -d
@@ -43,7 +43,7 @@ load-under-backfill: ## Run load WHILE a migration backfills, proving writes sta
 test: ## Run unit + integration tests (integration needs Docker)
 	go test ./...
 
-build: ## Build both binaries
+build: frontend-build ## Build both binaries
 	go build -o bin/engine ./cmd/engine
 	go build -o bin/mgctl ./cmd/mgctl
 	go build -o bin/loadgen ./cmd/loadgen
@@ -58,3 +58,22 @@ vet: ## Static analysis
 	go vet ./...
 
 lint: vet ## Alias for vet (add golangci-lint later)
+
+frontend-dev: ## Start the Vite dev server for the React dashboard
+	cd frontend && npm run dev
+
+frontend-build: ## Build the React dashboard for production
+	@if [ ! -d "frontend/node_modules" ]; then \
+		echo "node_modules missing. Installing frontend dependencies..."; \
+		cd frontend && npm install; \
+	fi
+	cd frontend && npm run build
+
+frontend-install: ## Install frontend dependencies
+	cd frontend && npm install
+
+run-all: up migrate frontend-build ## Full stack: infra + schema + built frontend
+	@echo "=== Stack ready ==="
+	@echo "Engine: http://localhost$(ENGINE_ADDR)"
+	@echo "Grafana: http://localhost:3004"
+	@echo "Prometheus: http://localhost:9093"

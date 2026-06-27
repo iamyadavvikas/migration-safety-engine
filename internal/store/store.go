@@ -221,5 +221,36 @@ func (s *Store) FindResumable(ctx context.Context) ([]uuid.UUID, error) {
 	return ids, rows.Err()
 }
 
+// ListSummary returns a lightweight summary of every migration (no plan JSON).
+type Summary struct {
+	ID        uuid.UUID `json:"migration_id"`
+	PlanID    string    `json:"plan_id"`
+	State     string    `json:"state"`
+	Terminal  bool      `json:"terminal"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (s *Store) List(ctx context.Context) ([]Summary, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT m.id, m.plan_id, ms.state, ms.terminal, ms.updated_at
+		   FROM migration m
+		   JOIN migration_state ms ON ms.migration_id = m.id
+		  ORDER BY ms.updated_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Summary
+	for rows.Next() {
+		var r Summary
+		if err := rows.Scan(&r.ID, &r.PlanID, &r.State, &r.Terminal, &r.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // Pool exposes the underlying pool for packages that need direct SQL (e.g. tests).
 func (s *Store) Pool() *pgxpool.Pool { return s.pool }

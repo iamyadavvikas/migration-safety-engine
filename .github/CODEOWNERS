@@ -1,0 +1,10 @@
+# Default owner
+* @iamyadavvikas
+
+# CI/CD changes
+.github/ @iamyadavvikas
+
+# Documentation
+docs/ @iamyadavvikas
+README.md @iamyadavvikas
+CONTRIBUTING.md @iamyadavvikas
