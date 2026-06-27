@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { MigrationRecord } from '../types'
@@ -11,17 +11,37 @@ export default function MigrationDetail() {
   const [record, setRecord] = useState<MigrationRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  useEffect(() => {
+  const fetchRecord = useCallback(async () => {
     if (!id) return
-    setLoading(true)
-    api.getMigration(id)
-      .then(setRecord)
-      .catch(e => setError((e as Error).message))
-      .finally(() => setLoading(false))
+    try {
+      const data = await api.getMigration(id)
+      setRecord(data)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setLoading(false)
+    }
   }, [id])
 
+  useEffect(() => { fetchRecord() }, [fetchRecord])
+
+  // Auto-refresh every 2s if not terminal
+  useEffect(() => {
+    if (record && !record.terminal) {
+      pollRef.current = setInterval(fetchRecord, 2000)
+    } else if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [record?.terminal, fetchRecord])
+
   const currentIdx = record ? STATE_FLOW.indexOf(record.state) : -1
+  const isLive = record && !record.terminal
 
   return (
     <div>
@@ -31,6 +51,11 @@ export default function MigrationDetail() {
             ← Back
           </button>
           <h1 style={{ fontFamily: 'monospace', fontSize: '1.2rem' }}>{id}</h1>
+          {isLive && (
+            <div className="live-indicator">
+              <span className="live-dot" /> Live — auto-refreshing
+            </div>
+          )}
         </div>
         {record && (
           <span className="state-badge" style={{
@@ -109,6 +134,29 @@ export default function MigrationDetail() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-header">Actions</div>
+            <div className="card-body" style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" onClick={() => navigate('/')}>
+                Back to Dashboard
+              </button>
+              {!record.terminal && (
+                <button className="btn btn-danger" onClick={async () => {
+                  if (confirm('Are you sure you want to abort this migration?')) {
+                    try {
+                      await api.abortMigration(record.migration_id)
+                      fetchRecord()
+                    } catch (e) {
+                      setError((e as Error).message)
+                    }
+                  }
+                }}>
+                  Abort Migration
+                </button>
+              )}
             </div>
           </div>
         </>

@@ -254,3 +254,15 @@ func (s *Store) List(ctx context.Context) ([]Summary, error) {
 
 // Pool exposes the underlying pool for packages that need direct SQL (e.g. tests).
 func (s *Store) Pool() *pgxpool.Pool { return s.pool }
+
+// Target returns the underlying pool for direct SQL operations.
+func (s *Store) Target() *pgxpool.Pool { return s.pool }
+
+// UpdateState directly sets a migration's state and terminal flag.
+func (s *Store) UpdateState(ctx context.Context, id uuid.UUID, state string, terminal bool) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE migration_state SET state = $2, terminal = $3, updated_at = now() WHERE migration_id = $1`,
+		id, state, terminal,
+	)
+	return err
+}

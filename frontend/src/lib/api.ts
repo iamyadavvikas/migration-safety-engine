@@ -46,6 +46,16 @@ class ApiClient {
     if (!res.ok) throw new Error(`list migrations: ${res.status}`)
     return res.json()
   }
+
+  async resetDemo(): Promise<void> {
+    const res = await fetch(`${this.base}/reset-demo`, { method: 'POST' })
+    if (!res.ok) throw new Error(`reset demo: ${res.status}`)
+  }
+
+  async abortMigration(id: string): Promise<void> {
+    const res = await fetch(`${this.base}/migrations/${id}/abort`, { method: 'POST' })
+    if (!res.ok) throw new Error(`abort migration: ${res.status}`)
+  }
 }
 
 export const api = new ApiClient()

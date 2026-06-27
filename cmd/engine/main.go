@@ -65,6 +65,8 @@ func main() {
 	mux.HandleFunc("POST /drift-scan", srv.driftScan)
 	mux.HandleFunc("GET /migrations", srv.listMigrations)
 	mux.HandleFunc("GET /migrations/{id}", srv.getMigration)
+	mux.HandleFunc("POST /reset-demo", srv.resetDemo)
+	mux.HandleFunc("POST /migrations/{id}/abort", srv.abortMigration)
 
 	distFS, err := fs.Sub(frontend.Assets, "dist")
 	if err != nil {
@@ -204,6 +206,32 @@ func (s *server) getMigration(w http.ResponseWriter, r *http.Request) {
 		"terminal":     rec.Terminal,
 		"updated_at":   rec.UpdatedAt,
 	})
+}
+
+// resetDemo resets the demo table to its pre-migration state.
+func (s *server) resetDemo(w http.ResponseWriter, r *http.Request) {
+	_, err := s.store.Target().Exec(r.Context(),
+		"ALTER TABLE catalog_product ADD COLUMN IF NOT EXISTS legacy_shipping text; "+
+			"ALTER TABLE catalog_product DROP COLUMN IF EXISTS shipping_class;")
+	if err != nil {
+		http.Error(w, "reset demo: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// abortMigration sets a migration to the RolledBack terminal state.
+func (s *server) abortMigration(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.UpdateState(r.Context(), id, string(statemachine.StateRolledBack), true); err != nil {
+		http.Error(w, "abort: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // drive runs a migration to completion in the background.
