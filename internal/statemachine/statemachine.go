@@ -260,6 +260,16 @@ func (r *Runner) backfill(ctx context.Context, rec *store.Record) (Result, error
 		done = int64(v)
 	}
 
+	// Use composite UPDATE if available (multiple columns), otherwise single column
+	updSQL := p.Backfill.MultiSQL
+	if updSQL == "" {
+		// Single column backfill (legacy mode)
+		updSQL = fmt.Sprintf(
+			`UPDATE %s SET %s = (%s) WHERE id IN (SELECT id FROM %s WHERE %s IS NULL ORDER BY id LIMIT $1)`,
+			p.Table, col, p.Backfill.SourceExpr, p.Table, col,
+		)
+	}
+
 	// remaining rows still needing a value; total = done + remaining.
 	var remaining int64
 	countSQL := fmt.Sprintf(`SELECT count(*) FROM %s WHERE %s IS NULL`, p.Table, col)
@@ -268,11 +278,6 @@ func (r *Runner) backfill(ctx context.Context, rec *store.Record) (Result, error
 	}
 	total := done + remaining
 	telemetry.SetBackfill(rec.ID.String(), p.ID, total, done)
-
-	updSQL := fmt.Sprintf(
-		`UPDATE %s SET %s = (%s) WHERE id IN (SELECT id FROM %s WHERE %s IS NULL ORDER BY id LIMIT $1)`,
-		p.Table, col, p.Backfill.SourceExpr, p.Table, col,
-	)
 
 	for {
 		select {

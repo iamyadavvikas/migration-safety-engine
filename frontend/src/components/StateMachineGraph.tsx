@@ -95,8 +95,10 @@ export default function StateMachineGraph({ currentState }: Props) {
 
     // Links
     links.forEach((link) => {
-      const src = nodes.find(n => n.id === link.source)!
-      const tgt = nodes.find(n => n.id === link.target)!
+      const src = nodes.find(n => n.id === link.source)
+      const tgt = nodes.find(n => n.id === link.target)
+      if (!src || !tgt) return
+      
       const srcIdx = STATE_FLOW.indexOf(src.state)
       const isActive = srcIdx < currentIdx
 
@@ -165,41 +167,45 @@ export default function StateMachineGraph({ currentState }: Props) {
     // Current state ring
     if (currentIdx >= 0 && !isTerminal) {
       const cur = nodes[currentIdx]
-      const ring = g.append('rect')
-        .attr('x', cur.x - 5).attr('y', cur.y - 5)
-        .attr('width', nodeW + 10).attr('height', nodeH + 10)
-        .attr('rx', 13).attr('fill', 'none')
-        .attr('stroke', STATE_COLORS[currentState])
-        .attr('stroke-width', 2).attr('stroke-dasharray', '6,4').attr('opacity', 0.8)
-      ring.append('animate')
-        .attr('attributeName', 'stroke-dashoffset')
-        .attr('from', '0').attr('to', '20')
-        .attr('dur', '1.5s').attr('repeatCount', 'indefinite')
+      if (cur) {
+        const ring = g.append('rect')
+          .attr('x', cur.x - 5).attr('y', cur.y - 5)
+          .attr('width', nodeW + 10).attr('height', nodeH + 10)
+          .attr('rx', 13).attr('fill', 'none')
+          .attr('stroke', STATE_COLORS[currentState])
+          .attr('stroke-width', 2).attr('stroke-dasharray', '6,4').attr('opacity', 0.8)
+        ring.append('animate')
+          .attr('attributeName', 'stroke-dashoffset')
+          .attr('from', '0').attr('to', '20')
+          .attr('dur', '1.5s').attr('repeatCount', 'indefinite')
 
-      // Pulsing outer glow
-      g.append('rect')
-        .attr('x', cur.x - 8).attr('y', cur.y - 8)
-        .attr('width', nodeW + 16).attr('height', nodeH + 16)
-        .attr('rx', 16).attr('fill', 'none')
-        .attr('stroke', STATE_COLORS[currentState])
-        .attr('stroke-width', 1).attr('opacity', 0.3)
-        .append('animate')
-        .attr('attributeName', 'opacity')
-        .attr('values', '0.3;0.1;0.3')
-        .attr('dur', '2s').attr('repeatCount', 'indefinite')
+        // Pulsing outer glow
+        g.append('rect')
+          .attr('x', cur.x - 8).attr('y', cur.y - 8)
+          .attr('width', nodeW + 16).attr('height', nodeH + 16)
+          .attr('rx', 16).attr('fill', 'none')
+          .attr('stroke', STATE_COLORS[currentState])
+          .attr('stroke-width', 1).attr('opacity', 0.3)
+          .append('animate')
+          .attr('attributeName', 'opacity')
+          .attr('values', '0.3;0.1;0.3')
+          .attr('dur', '2s').attr('repeatCount', 'indefinite')
+      }
     }
 
     // Terminal effects
-    if (isTerminal) {
+    if (isTerminal && currentIdx >= 0) {
       const cur = nodes[currentIdx]
-      g.append('rect')
-        .attr('x', cur.x - 6).attr('y', cur.y - 6)
-        .attr('width', nodeW + 12).attr('height', nodeH + 12)
-        .attr('rx', 14).attr('fill', 'none')
-        .attr('stroke', STATE_COLORS[currentState])
-        .attr('stroke-width', 2)
-        .attr('stroke-dasharray', isSuccess ? 'none' : '4,3')
-        .attr('opacity', 0.6)
+      if (cur) {
+        g.append('rect')
+          .attr('x', cur.x - 6).attr('y', cur.y - 6)
+          .attr('width', nodeW + 12).attr('height', nodeH + 12)
+          .attr('rx', 14).attr('fill', 'none')
+          .attr('stroke', STATE_COLORS[currentState])
+          .attr('stroke-width', 2)
+          .attr('stroke-dasharray', isSuccess ? 'none' : '4,3')
+          .attr('opacity', 0.6)
+      }
     }
 
   }, [currentState, nodes, links])

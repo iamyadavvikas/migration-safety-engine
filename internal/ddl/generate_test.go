@@ -12,7 +12,8 @@ func TestGenerateAddColumn(t *testing.T) {
 	if len(out.Expand) != 1 {
 		t.Fatalf("expected 1 expand, got %d", len(out.Expand))
 	}
-	if out.Expand[0] != "ALTER TABLE catalog_product ADD COLUMN IF NOT EXISTS shipping_class text NULL" {
+	// Always NULL for safety with existing data
+	if out.Expand[0] != "ALTER TABLE catalog_product ADD COLUMN IF NOT EXISTS shipping_class text" {
 		t.Errorf("unexpected expand: %s", out.Expand[0])
 	}
 	if len(out.Rollback) != 1 {
@@ -31,7 +32,8 @@ func TestGenerateAddColumnWithIndex(t *testing.T) {
 	if len(out.Expand) != 2 {
 		t.Fatalf("expected 2 expand (column + index), got %d", len(out.Expand))
 	}
-	if out.Expand[0] != "ALTER TABLE catalog_product ADD COLUMN IF NOT EXISTS shipping_class text NOT NULL" {
+	// Always NULL for safety
+	if out.Expand[0] != "ALTER TABLE catalog_product ADD COLUMN IF NOT EXISTS shipping_class text" {
 		t.Errorf("unexpected expand[0]: %s", out.Expand[0])
 	}
 	expectedIdx := "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_catalog_product_shipping_class ON catalog_product (shipping_class)"
@@ -44,6 +46,28 @@ func TestGenerateAddColumnWithIndex(t *testing.T) {
 	expectedDropIdx := "DROP INDEX IF EXISTS idx_catalog_product_shipping_class"
 	if out.Rollback[0] != expectedDropIdx {
 		t.Errorf("unexpected rollback[0]: %s", out.Rollback[0])
+	}
+}
+
+func TestGenerateAddColumnNotNull(t *testing.T) {
+	out := Generate("catalog_product", []ColumnSpec{
+		{Name: "total_amount", Type: "numeric", Nullable: false},
+	}, nil)
+
+	// Expand: always NULL for safety
+	if len(out.Expand) != 1 {
+		t.Fatalf("expected 1 expand, got %d", len(out.Expand))
+	}
+	if out.Expand[0] != "ALTER TABLE catalog_product ADD COLUMN IF NOT EXISTS total_amount numeric" {
+		t.Errorf("unexpected expand: %s", out.Expand[0])
+	}
+
+	// Contract: enforce NOT NULL after backfill
+	if len(out.Contract) != 1 {
+		t.Fatalf("expected 1 contract (SET NOT NULL), got %d", len(out.Contract))
+	}
+	if out.Contract[0] != "ALTER TABLE catalog_product ALTER COLUMN total_amount SET NOT NULL" {
+		t.Errorf("unexpected contract: %s", out.Contract[0])
 	}
 }
 
@@ -73,16 +97,16 @@ func TestGenerateBackfillExpr(t *testing.T) {
 
 func TestGenerateFullPlan(t *testing.T) {
 	out := Generate("catalog_product", []ColumnSpec{
-		{Name: "shipping_class", Type: "text", Expression: "CASE WHEN weight < 1 THEN 'light' ELSE 'freight' END", Indexed: true},
+		{Name: "shipping_class", Type: "text", Expression: "CASE WHEN weight < 1 THEN 'light' ELSE 'freight' END", Indexed: true, Nullable: false},
 	}, []string{"legacy_shipping"})
 
-	// Expand: column + index
+	// Expand: column + index (always NULL)
 	if len(out.Expand) != 2 {
 		t.Fatalf("expected 2 expand, got %d", len(out.Expand))
 	}
-	// Contract: drop legacy
-	if len(out.Contract) != 1 {
-		t.Fatalf("expected 1 contract, got %d", len(out.Contract))
+	// Contract: drop legacy + SET NOT NULL
+	if len(out.Contract) != 2 {
+		t.Fatalf("expected 2 contract (drop + set not null), got %d", len(out.Contract))
 	}
 	// Rollback: drop index + column
 	if len(out.Rollback) != 2 {

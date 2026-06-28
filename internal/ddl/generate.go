@@ -17,18 +17,19 @@ type ColumnSpec struct {
 
 // Output holds the generated SQL fragments for a migration plan.
 type Output struct {
-	Expand   []string // DDL to add columns/indexes
-	Contract []string // DDL to drop legacy columns
+	Expand   []string // DDL to add columns/indexes (always NULL for safety)
+	Contract []string // DDL to drop legacy columns + enforce NOT NULL constraints
 	Rollback []string // DDL to undo expand
-	BackfillExpr     string // source_expr for backfill (from first column with Expression)
-	BackfillColumn   string // column name for backfill
+	BackfillExpr     string // source_expr for backfill (first column with expression, for tracking)
+	BackfillColumn   string // column name for backfill (first column with expression, for tracking)
+	BackfillMulti    string // composite UPDATE statement for multiple columns
 }
 
 // Generate produces expand/contract/rollback DDL from declarative specs.
 func Generate(table string, add []ColumnSpec, drop []string) Output {
 	out := Output{}
 
-	// Expand: add columns + optional indexes
+	// Expand: add columns as NULL (safe for tables with existing data) + optional indexes
 	for _, col := range add {
 		out.Expand = append(out.Expand, addColumnDDL(table, col))
 		if col.Indexed {
@@ -36,9 +37,14 @@ func Generate(table string, add []ColumnSpec, drop []string) Output {
 		}
 	}
 
-	// Contract: drop legacy columns
+	// Contract: drop legacy columns + enforce NOT NULL on new columns
 	for _, col := range drop {
 		out.Contract = append(out.Contract, dropColumnDDL(table, col))
+	}
+	for _, col := range add {
+		if !col.Nullable {
+			out.Contract = append(out.Contract, setNotNullDDL(table, col))
+		}
 	}
 
 	// Rollback: undo expand (drop indexes first, then columns)
@@ -49,24 +55,61 @@ func Generate(table string, add []ColumnSpec, drop []string) Output {
 		out.Rollback = append(out.Rollback, dropColumnDDL(table, col.Name))
 	}
 
-	// Backfill: use first column with an expression
+	// Backfill: collect columns with expressions
+	var exprCols []ColumnSpec
 	for _, col := range add {
 		if col.Expression != "" {
-			out.BackfillExpr = col.Expression
-			out.BackfillColumn = col.Name
-			break
+			exprCols = append(exprCols, col)
 		}
+	}
+
+	if len(exprCols) > 0 {
+		// Set tracking fields from first column
+		out.BackfillExpr = exprCols[0].Expression
+		out.BackfillColumn = exprCols[0].Name
+
+		// Generate composite UPDATE for all columns
+		out.BackfillMulti = generateCompositeBackfill(table, exprCols)
 	}
 
 	return out
 }
 
-func addColumnDDL(table string, col ColumnSpec) string {
-	null := "NULL"
-	if !col.Nullable {
-		null = "NOT NULL"
+// generateCompositeBackfill creates a single UPDATE statement that fills multiple columns at once.
+func generateCompositeBackfill(table string, cols []ColumnSpec) string {
+	if len(cols) == 0 {
+		return ""
 	}
-	return fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s %s", table, col.Name, col.Type, null)
+
+	var setClauses []string
+	for _, col := range cols {
+		setClauses = append(setClauses, fmt.Sprintf("%s = (%s)", col.Name, col.Expression))
+	}
+
+	// Build WHERE clause: at least one target column is NULL
+	var nullChecks []string
+	for _, col := range cols {
+		nullChecks = append(nullChecks, fmt.Sprintf("%s IS NULL", col.Name))
+	}
+
+	return fmt.Sprintf(
+		"UPDATE %s SET %s WHERE id IN (SELECT id FROM %s WHERE %s ORDER BY id LIMIT $1)",
+		table,
+		strings.Join(setClauses, ", "),
+		table,
+		strings.Join(nullChecks, " OR "),
+	)
+}
+
+// addColumnDDL always adds columns as NULL for safety with existing data.
+// NOT NULL is enforced later in the Contract phase after backfill.
+func addColumnDDL(table string, col ColumnSpec) string {
+	return fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s", table, col.Name, col.Type)
+}
+
+// setNotNullDDL enforces NOT NULL after backfill is complete.
+func setNotNullDDL(table string, col ColumnSpec) string {
+	return fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL", table, col.Name)
 }
 
 func createIndexDDL(table string, col ColumnSpec) string {

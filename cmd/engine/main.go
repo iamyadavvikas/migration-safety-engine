@@ -219,6 +219,8 @@ func (s *server) getMigration(w http.ResponseWriter, r *http.Request) {
 		"state":        rec.State,
 		"terminal":     rec.Terminal,
 		"updated_at":   rec.UpdatedAt,
+		"table":        rec.Plan.Table,
+		"plan":         rec.Plan,
 	})
 }
 

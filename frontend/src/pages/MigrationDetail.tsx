@@ -4,7 +4,7 @@ import { api } from '../lib/api'
 import { useToast } from '../components/Toast'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { POLL_INTERVAL_MS } from '../lib/constants'
-import type { MigrationRecord } from '../types'
+import type { MigrationRecord, SchemaColumn } from '../types'
 import { STATE_COLORS, STATE_LABELS, STATE_FLOW } from '../types'
 import StateMachineGraph from '../components/StateMachineGraph'
 import MetricsPanel from '../components/MetricsPanel'
@@ -17,6 +17,8 @@ export default function MigrationDetail() {
   const [error, setError] = useState('')
   const [aborting, setAborting] = useState(false)
   const [showAbortConfirm, setShowAbortConfirm] = useState(false)
+  const [schema, setSchema] = useState<SchemaColumn[]>([])
+  const [schemaLoading, setSchemaLoading] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const { toast } = useToast()
 
@@ -33,7 +35,25 @@ export default function MigrationDetail() {
     }
   }, [id])
 
+  const fetchSchema = useCallback(async (table: string) => {
+    setSchemaLoading(true)
+    try {
+      const res = await api.fetchSchema(table)
+      setSchema(res.columns)
+    } catch (e) {
+      console.error('Failed to fetch schema:', e)
+    } finally {
+      setSchemaLoading(false)
+    }
+  }, [])
+
   useEffect(() => { fetchRecord() }, [fetchRecord])
+
+  useEffect(() => {
+    if (record?.table) {
+      fetchSchema(record.table)
+    }
+  }, [record?.table, fetchSchema])
 
   useEffect(() => {
     if (record && !record.terminal) {
@@ -271,9 +291,231 @@ export default function MigrationDetail() {
           {/* Real-time Metrics */}
           <MetricsPanel migrationId={record.migration_id} planId={record.plan_id} isLive={!!isLive} />
 
+          {/* Before Schema (for drop-column migrations) */}
+          {record.table && record.plan?.drop_columns && record.plan.drop_columns.length > 0 && (
+            <div className="card fade-in" style={{ animationDelay: '0.12s' }}>
+              <div className="card-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                    <path d="M2 3h12M2 6h12M2 9h8M2 12h5"/>
+                  </svg>
+                  <span>Schema Before: <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.85rem' }}>{record.table}</code></span>
+                </div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--warning)', fontWeight: 600 }}>
+                  {schema.length + record.plan.drop_columns.length} columns
+                </span>
+              </div>
+              <div className="card-body" style={{ padding: 0 }}>
+                <div className="table-wrapper">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th scope="col" style={{ width: 40 }}>#</th>
+                        <th scope="col">Column</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Nullable</th>
+                        <th scope="col">Default</th>
+                        <th scope="col" style={{ width: 80 }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...schema, ...record.plan.drop_columns.map(name => ({
+                        name,
+                        type: 'text',
+                        nullable: true,
+                        default: undefined,
+                        _dropped: true,
+                      }))].map((col, i) => (
+                        <tr key={col.name} style={{
+                          background: '_dropped' in col && col._dropped ? 'rgba(239, 68, 68, 0.05)' : undefined,
+                        }}>
+                          <td style={{ color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8rem' }}>
+                            {String(i + 1).padStart(2, '0')}
+                          </td>
+                          <td>
+                            <span style={{
+                              fontFamily: 'JetBrains Mono, monospace',
+                              fontWeight: 600,
+                              fontSize: '0.85rem',
+                              color: '_dropped' in col && col._dropped ? 'var(--danger)' : undefined,
+                              textDecoration: '_dropped' in col && col._dropped ? 'line-through' : undefined,
+                            }}>
+                              {col.name}
+                            </span>
+                          </td>
+                          <td>
+                            <span style={{
+                              fontFamily: 'JetBrains Mono, monospace',
+                              fontSize: '0.8rem',
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              background: '_dropped' in col && col._dropped ? 'rgba(239, 68, 68, 0.1)' : 'rgba(99, 102, 241, 0.1)',
+                              color: '_dropped' in col && col._dropped ? 'var(--danger)' : 'var(--indigo)',
+                            }}>
+                              {col.type}
+                            </span>
+                          </td>
+                          <td>
+                            {col.nullable ? (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>YES</span>
+                            ) : (
+                              <span style={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.8rem' }}>NO</span>
+                            )}
+                          </td>
+                          <td>
+                            {col.default ? (
+                              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                {col.default.length > 30 ? col.default.slice(0, 30) + '...' : col.default}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
+                            )}
+                          </td>
+                          <td>
+                            {'_dropped' in col && col._dropped ? (
+                              <span style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 600,
+                                color: 'var(--danger)',
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                padding: '2px 8px',
+                                borderRadius: 4,
+                              }}>
+                                DROPPED
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Current Schema */}
+          {record.table && (
+            <div className="card fade-in" style={{ animationDelay: '0.15s' }}>
+              <div className="card-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                    <path d="M2 3h12M2 6h12M2 9h8M2 12h5"/>
+                  </svg>
+                  <span>Schema After: <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.85rem' }}>{record.table}</code></span>
+                </div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 600 }}>
+                  {schema.length} columns
+                </span>
+              </div>
+              <div className="card-body" style={{ padding: 0 }}>
+                {schemaLoading ? (
+                  <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    Loading schema...
+                  </div>
+                ) : schema.length === 0 ? (
+                  <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    No schema available
+                  </div>
+                ) : (
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th scope="col" style={{ width: 40 }}>#</th>
+                          <th scope="col">Column</th>
+                          <th scope="col">Type</th>
+                          <th scope="col">Nullable</th>
+                          <th scope="col">Default</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {schema.map((col, i) => (
+                          <tr key={col.name}>
+                            <td style={{ color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8rem' }}>
+                              {String(i + 1).padStart(2, '0')}
+                            </td>
+                            <td>
+                              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, fontSize: '0.85rem' }}>
+                                {col.name}
+                              </span>
+                            </td>
+                            <td>
+                              <span style={{
+                                fontFamily: 'JetBrains Mono, monospace',
+                                fontSize: '0.8rem',
+                                padding: '2px 8px',
+                                borderRadius: 4,
+                                background: 'rgba(99, 102, 241, 0.1)',
+                                color: 'var(--indigo)',
+                              }}>
+                                {col.type}
+                              </span>
+                            </td>
+                            <td>
+                              {col.nullable ? (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>YES</span>
+                              ) : (
+                                <span style={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.8rem' }}>NO</span>
+                              )}
+                            </td>
+                            <td>
+                              {col.default ? (
+                                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                  {col.default.length > 40 ? col.default.slice(0, 40) + '...' : col.default}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Migration Plan Input */}
+          {record.plan && (
+            <div className="card fade-in" style={{ animationDelay: '0.18s' }}>
+              <div className="card-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                    <path d="M5 3l-3 5 3 5M11 3l3 5-3 5M9 1L7 15"/>
+                  </svg>
+                  <span>Migration Plan</span>
+                </div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
+                  v{record.plan.version}
+                </span>
+              </div>
+              <div className="card-body" style={{ padding: 0 }}>
+                <div style={{
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: '0.8rem',
+                  lineHeight: 1.6,
+                  padding: '16px 20px',
+                  background: 'rgba(0, 0, 0, 0.2)',
+                  overflowX: 'auto',
+                  maxHeight: 400,
+                  overflowY: 'auto',
+                }}>
+                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {JSON.stringify(record.plan, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="card fade-in" style={{ animationDelay: '0.2s' }}>
             <div className="card-header">Actions</div>
-            <div className="card-body" style={{ display: 'flex', gap: 12 }}>
+            <div className="card-body" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <button className="btn" onClick={() => navigate('/')}>
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                   <path d="M10 3L5 8l5 5"/>
@@ -285,7 +527,7 @@ export default function MigrationDetail() {
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                     <path d="M4 4l8 8M12 4l-8 8"/>
                   </svg>
-                  {aborting ? 'Aborting...' : 'Abort Migration'}
+                  {aborting ? 'Aborting...' : 'Abort & Rollback'}
                 </button>
               )}
             </div>
@@ -295,9 +537,9 @@ export default function MigrationDetail() {
 
       <ConfirmDialog
         open={showAbortConfirm}
-        title="Abort Migration"
-        message="This will immediately stop the migration and attempt to roll back all changes. This action cannot be undone."
-        confirmLabel="Abort Migration"
+        title="Abort & Rollback Migration"
+        message="This will immediately stop the migration and roll back all changes made during the expand phase. The contract DDL will be undone and all new columns will be dropped."
+        confirmLabel="Abort & Rollback"
         danger
         onConfirm={handleAbort}
         onCancel={() => setShowAbortConfirm(false)}

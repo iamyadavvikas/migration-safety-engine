@@ -79,6 +79,7 @@ type Backfill struct {
 	BatchSize  int    `yaml:"batch_size" json:"batch_size"`
 	ThrottleMs int    `yaml:"throttle_ms" json:"throttle_ms"`
 	SourceExpr string `yaml:"source_expr" json:"source_expr"` // raw SQL expression computed per row
+	MultiSQL   string `yaml:"multi_sql,omitempty" json:"multi_sql,omitempty"` // composite UPDATE for multiple columns
 }
 
 // Verify controls shadow-read parity verification before cutover.
@@ -151,8 +152,9 @@ func (p *MigrationPlan) Validate() error {
 	if p.Strategy != StrategyExpandContract {
 		return fmt.Errorf("unsupported strategy %q (Phase 1 supports only %q)", p.Strategy, StrategyExpandContract)
 	}
-	if len(p.Expand) == 0 {
-		return fmt.Errorf("plan.expand must contain at least one statement")
+	// Allow empty expand for drop-only migrations
+	if len(p.Expand) == 0 && len(p.DropColumns) == 0 && len(p.AddColumns) == 0 {
+		return fmt.Errorf("plan.expand must contain at least one statement (or specify add_columns/drop_columns)")
 	}
 	if len(p.Canary.Steps) == 0 {
 		p.Canary.Steps = []int{1, 5, 25, 100}
@@ -206,6 +208,9 @@ func (p *MigrationPlan) generateDDL() error {
 	}
 	if p.Backfill.SourceExpr == "" && out.BackfillExpr != "" {
 		p.Backfill.SourceExpr = out.BackfillExpr
+	}
+	if p.Backfill.MultiSQL == "" && out.BackfillMulti != "" {
+		p.Backfill.MultiSQL = out.BackfillMulti
 	}
 
 	// Set defaults for backfill if columns were specified.

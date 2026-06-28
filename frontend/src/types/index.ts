@@ -29,6 +29,8 @@ export interface MigrationRecord {
   state: State
   terminal: boolean
   updated_at: string
+  table?: string
+  plan?: MigrationPlan
 }
 
 export interface MigrationPlan {
