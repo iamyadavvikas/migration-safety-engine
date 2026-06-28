@@ -86,6 +86,7 @@ func main() {
 
 	// Public endpoints (no auth required)
 	mux.HandleFunc("GET /healthz", srv.healthz)
+	mux.HandleFunc("GET /status", srv.status)
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("POST /auth/login", srv.login)
 
@@ -171,6 +172,75 @@ type server struct {
 func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
+}
+
+// status returns system health information.
+func (s *server) status(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get migration stats
+	stats := map[string]any{
+		"status": "healthy",
+		"time":   time.Now().UTC(),
+	}
+
+	// Count migrations by state
+	migrations, err := s.store.List(ctx)
+	if err == nil {
+		stateCount := make(map[string]int)
+		for _, m := range migrations {
+			stateCount[string(m.State)]++
+		}
+		stats["migrations"] = map[string]any{
+			"total":  len(migrations),
+			"states": stateCount,
+		}
+	}
+
+	// Get database stats
+	var dbStats struct {
+		ActiveConns int
+		IdleConns   int
+		MaxConns    int
+	}
+	err = s.store.Target().QueryRow(ctx, `
+		SELECT 
+			COUNT(*) FILTER (WHERE state = 'active'),
+			COUNT(*) FILTER (WHERE state = 'idle'),
+			(SELECT setting::int FROM pg_settings WHERE name = 'max_connections')
+		FROM pg_stat_activity
+	`).Scan(&dbStats.ActiveConns, &dbStats.IdleConns, &dbStats.MaxConns)
+	if err == nil {
+		stats["database"] = map[string]any{
+			"active_connections": dbStats.ActiveConns,
+			"idle_connections":   dbStats.IdleConns,
+			"max_connections":    dbStats.MaxConns,
+		}
+	}
+
+	// Get replication lag
+	var lagMs int
+	err = s.store.Target().QueryRow(ctx, `
+		SELECT COALESCE(
+			EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp())) * 1000,
+			0
+		)::int
+	`).Scan(&lagMs)
+	if err == nil {
+		stats["replication_lag_ms"] = lagMs
+	}
+
+	// Worker pool stats
+	if s.workerPool != nil {
+		poolStats := s.workerPool.Stats()
+		stats["workers"] = map[string]any{
+			"running": poolStats.Workers,
+			"pending": poolStats.Pending,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(stats)
 }
 
 // login authenticates a user and returns a JWT token.
