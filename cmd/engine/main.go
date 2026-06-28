@@ -21,9 +21,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/iamyadavvikas/migration-safety-engine/frontend"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/auth"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/plan"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/statemachine"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/store"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/worker"
 )
 
 func main() {
@@ -33,7 +35,11 @@ func main() {
 	// TARGET_DSN is the application database the engine migrates. It defaults to the
 	// control DSN so the demo runs on one Postgres; in production it is a separate DB.
 	targetDSN := envOr("TARGET_DSN", dsn)
+	// REPLICA_DSN is an optional read replica for SLO checks (reduces load on primary)
+	replicaDSN := envOr("REPLICA_DSN", "")
 	addr := envOr("ENGINE_ADDR", ":8080")
+	jwtSecret := envOr("JWT_SECRET", "")
+	jwtExpiry := 24 * time.Hour
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -52,23 +58,52 @@ func main() {
 	}
 	defer target.Close()
 
+	// Connect to read replica if configured
+	var replica *pgxpool.Pool
+	if replicaDSN != "" {
+		replica, err = pgxpool.New(ctx, replicaDSN)
+		if err != nil {
+			log.Warn("failed to connect to replica, using primary for SLO checks", "err", err)
+			replica = nil
+		} else {
+			log.Info("connected to read replica for SLO checks", "dsn", replicaDSN)
+		}
+	}
+
 	runner := statemachine.NewRunner(st, target, log)
-	srv := &server{store: st, runner: runner, log: log}
+	authService := auth.NewAuth(jwtSecret, jwtExpiry)
+	
+	// Initialize worker pool for parallel migrations
+	workerPool := worker.NewPool(runner, 4, log)
+	workerPool.Start(ctx)
+	
+	srv := &server{store: st, runner: runner, log: log, auth: authService, replica: replica, workerPool: workerPool}
 
 	// Resume any in-flight migrations from their last persisted state.
 	srv.resumeAll(ctx)
 
 	mux := http.NewServeMux()
+
+	// Public endpoints (no auth required)
 	mux.HandleFunc("GET /healthz", srv.healthz)
 	mux.Handle("GET /metrics", promhttp.Handler())
-	mux.HandleFunc("POST /plans", srv.applyPlan)
-	mux.HandleFunc("POST /drift-scan", srv.driftScan)
-	mux.HandleFunc("GET /migrations", srv.listMigrations)
-	mux.HandleFunc("GET /migrations/{id}", srv.getMigration)
-	mux.HandleFunc("POST /reset-demo", srv.resetDemo)
-	mux.HandleFunc("POST /migrations/{id}/abort", srv.abortMigration)
-	mux.HandleFunc("DELETE /migrations", srv.deleteMigrations)
-	mux.HandleFunc("GET /schema/{table}", srv.getSchema)
+	mux.HandleFunc("POST /auth/login", srv.login)
+
+	// Protected endpoints (auth required)
+	mux.HandleFunc("POST /plans", srv.auth.RequireAuth(http.HandlerFunc(srv.applyPlan)).ServeHTTP)
+	mux.HandleFunc("POST /drift-scan", srv.auth.RequireAuth(http.HandlerFunc(srv.driftScan)).ServeHTTP)
+	mux.HandleFunc("GET /migrations", srv.auth.RequireAuth(http.HandlerFunc(srv.listMigrations)).ServeHTTP)
+	mux.HandleFunc("GET /migrations/{id}", srv.auth.RequireAuth(http.HandlerFunc(srv.getMigration)).ServeHTTP)
+	mux.HandleFunc("POST /reset-demo", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionManageSettings, http.HandlerFunc(srv.resetDemo))).ServeHTTP)
+	mux.HandleFunc("POST /migrations/{id}/abort", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionWriteMigrations, http.HandlerFunc(srv.abortMigration))).ServeHTTP)
+	mux.HandleFunc("DELETE /migrations", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionDeleteMigrations, http.HandlerFunc(srv.deleteMigrations))).ServeHTTP)
+	mux.HandleFunc("GET /schema/{table}", srv.auth.RequireAuth(http.HandlerFunc(srv.getSchema)).ServeHTTP)
+	mux.HandleFunc("GET /migrations/{id}/safety", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionReadSafety, http.HandlerFunc(srv.getSafetyMetrics))).ServeHTTP)
+	mux.HandleFunc("GET /migrations/{id}/backfill", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionReadSafety, http.HandlerFunc(srv.getBackfillProgress))).ServeHTTP)
+	mux.HandleFunc("GET /migrations/{id}/canary", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionReadSafety, http.HandlerFunc(srv.getCanaryObservations))).ServeHTTP)
+	mux.HandleFunc("POST /migrations/{id}/services", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionWriteMigrations, http.HandlerFunc(srv.registerService))).ServeHTTP)
+	mux.HandleFunc("PUT /migrations/{id}/services/{service}", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionWriteMigrations, http.HandlerFunc(srv.updateServiceCompat))).ServeHTTP)
+	mux.HandleFunc("GET /migrations/{id}/services", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionReadSafety, http.HandlerFunc(srv.getServices))).ServeHTTP)
 
 	distFS, err := fs.Sub(frontend.Assets, "dist")
 	if err != nil {
@@ -113,22 +148,53 @@ func main() {
 
 	<-ctx.Done()
 	log.Info("shutting down")
+	srv.workerPool.Stop()
 	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutCtx)
 	srv.wg.Wait()
+	if srv.replica != nil {
+		srv.replica.Close()
+	}
 }
 
 type server struct {
 	store  *store.Store
 	runner *statemachine.Runner
 	log    *slog.Logger
+	auth   *auth.Auth
+	replica *pgxpool.Pool
+	workerPool *worker.Pool
 	wg     sync.WaitGroup
 }
 
 func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
+}
+
+// login authenticates a user and returns a JWT token.
+func (s *server) login(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	token, role, err := s.auth.Authenticate(req.Username, req.Password)
+	if err != nil {
+		http.Error(w, "invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"token": token,
+		"role":  string(role),
+	})
 }
 
 // applyPlan accepts a MigrationPlan as JSON, creates the migration, and starts
@@ -344,15 +410,166 @@ func (s *server) getSchema(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// drive runs a migration to completion in the background.
+// getSafetyMetrics returns DDL execution logs for a migration.
+func (s *server) getSafetyMetrics(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+
+	logs, err := s.store.GetDDLLogs(r.Context(), id)
+	if err != nil {
+		http.Error(w, "get ddl logs: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"migration_id": id.String(),
+		"ddl_logs":     logs,
+	})
+}
+
+// getBackfillProgress returns backfill progress entries for a migration.
+func (s *server) getBackfillProgress(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+
+	progress, err := s.store.GetBackfillProgress(r.Context(), id)
+	if err != nil {
+		http.Error(w, "get backfill progress: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"migration_id": id.String(),
+		"progress":     progress,
+	})
+}
+
+// getCanaryObservations returns canary observations for a migration.
+func (s *server) getCanaryObservations(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+
+	observations, err := s.store.GetCanaryObservations(r.Context(), id)
+	if err != nil {
+		http.Error(w, "get canary observations: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"migration_id": id.String(),
+		"observations": observations,
+	})
+}
+
+// registerService registers a service as dependent on a migration.
+func (s *server) registerService(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		ServiceName   string `json:"service_name"`
+		SchemaVersion int    `json:"schema_version"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.ServiceName == "" {
+		http.Error(w, "service_name required", http.StatusBadRequest)
+		return
+	}
+
+	svcID, err := s.store.RegisterService(r.Context(), id, req.ServiceName, req.SchemaVersion)
+	if err != nil {
+		http.Error(w, "register service: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"service_id": svcID.String(),
+	})
+}
+
+// updateServiceCompat updates a service's compatibility status.
+func (s *server) updateServiceCompat(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+
+	service := r.PathValue("service")
+	if service == "" {
+		http.Error(w, "service name required", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Compatible bool `json:"compatible"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := s.store.UpdateServiceCompat(r.Context(), id, service, req.Compatible); err != nil {
+		http.Error(w, "update service compat: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// getServices returns all services registered for a migration.
+func (s *server) getServices(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+
+	services, err := s.store.GetServices(r.Context(), id)
+	if err != nil {
+		http.Error(w, "get services: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	ready, notReady, err := s.store.AllServicesReady(r.Context(), id)
+	if err != nil {
+		http.Error(w, "check services ready: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"migration_id": id.String(),
+		"services":     services,
+		"all_ready":    ready,
+		"not_ready":    notReady,
+	})
+}
+
+// drive runs a migration to completion in the background using the worker pool.
 func (s *server) drive(id uuid.UUID) {
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		if err := s.runner.Run(context.Background(), id); err != nil {
-			s.log.Error("run migration", "migration", id, "err", err)
-		}
-	}()
+	s.workerPool.Submit(id)
 }
 
 // resumeAll continues any non-terminal migrations found at startup.

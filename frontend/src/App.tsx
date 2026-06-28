@@ -1,12 +1,57 @@
 import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ToastProvider } from './components/Toast'
 import Dashboard from './pages/Dashboard'
 import MigrationDetail from './pages/MigrationDetail'
 import NewPlan from './pages/NewPlan'
 import DriftScanPage from './pages/DriftScanPage'
+import LoginPage from './pages/LoginPage'
+import { api } from './lib/api'
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [userRole, setUserRole] = useState<string | null>(null)
+
+  useEffect(() => {
+    const token = api.getToken()
+    if (token) {
+      setIsAuthenticated(true)
+      // Decode token to get role (in production, validate with server)
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        setUserRole(payload.role)
+      } catch {
+        setUserRole('viewer')
+      }
+    }
+  }, [])
+
+  const handleLogin = (role: string) => {
+    setIsAuthenticated(true)
+    setUserRole(role)
+  }
+
+  const handleLogout = () => {
+    api.logout()
+    setIsAuthenticated(false)
+    setUserRole(null)
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <BrowserRouter>
+        <ToastProvider>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="*" element={<LoginPage onLogin={handleLogin} />} />
+            </Routes>
+          </ErrorBoundary>
+        </ToastProvider>
+      </BrowserRouter>
+    )
+  }
+
   return (
     <BrowserRouter>
       <ToastProvider>
@@ -40,6 +85,10 @@ export default function App() {
                   </svg>
                   Search...
                   <kbd>⌘K</kbd>
+                </div>
+                <div className="nav-user">
+                  <span className="nav-role">{userRole}</span>
+                  <button className="btn btn-sm" onClick={handleLogout}>Logout</button>
                 </div>
                 <a
                   href="https://github.com/iamyadavvikas/migration-safety-engine"

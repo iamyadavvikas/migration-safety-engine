@@ -1,414 +1,632 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MSE → YC F26 Action Plan</title>
-  <style>
-    :root {
-      --bg: #09090b;
-      --surface: #18181b;
-      --border: #27272a;
-      --text: #fafafa;
-      --text-muted: #a1a1aa;
-      --accent: #6366f1;
-      --accent-glow: #818cf8;
-      --success: #34d399;
-      --warning: #fbbf24;
-      --danger: #f87171;
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
-      line-height: 1.6;
-      padding: 40px 20px;
-      max-width: 860px;
-      margin: 0 auto;
-    }
-    h1 {
-      font-size: 1.8rem;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      margin-bottom: 4px;
-    }
-    h1 span { color: var(--accent-glow); }
-    .subtitle {
-      color: var(--text-muted);
-      font-size: 0.9rem;
-      margin-bottom: 32px;
-    }
-    .deadline-banner {
-      background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(129,140,248,0.06));
-      border: 1px solid rgba(99,102,241,0.2);
-      border-radius: 12px;
-      padding: 16px 20px;
-      margin-bottom: 32px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .deadline-banner .icon {
-      font-size: 1.4rem;
-      flex-shrink: 0;
-    }
-    .deadline-banner .label {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    .deadline-banner .date {
-      font-size: 1rem;
-      font-weight: 700;
-      color: var(--accent-glow);
-    }
-    .week {
-      margin-bottom: 28px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    .week-header {
-      padding: 14px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid var(--border);
-    }
-    .week-title {
-      font-size: 0.95rem;
-      font-weight: 700;
-    }
-    .week-date {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      font-family: 'JetBrains Mono', monospace;
-    }
-    .week-body { padding: 16px 20px; }
-    .task {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 8px 0;
-      border-bottom: 1px solid rgba(39,39,42,0.5);
-    }
-    .task:last-child { border-bottom: none; }
-    .task input[type="checkbox"] {
-      appearance: none;
-      -webkit-appearance: none;
-      width: 16px;
-      height: 16px;
-      border: 1.5px solid var(--border);
-      border-radius: 4px;
-      background: rgba(9,9,11,0.6);
-      cursor: pointer;
-      flex-shrink: 0;
-      margin-top: 2px;
-      position: relative;
-      transition: all 0.15s ease;
-    }
-    .task input[type="checkbox"]:checked {
-      background: var(--success);
-      border-color: var(--success);
-    }
-    .task input[type="checkbox"]:checked::after {
-      content: '';
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 5px;
-      height: 8px;
-      border: solid white;
-      border-width: 0 2px 2px 0;
-      transform: translate(-50%, -60%) rotate(45deg);
-    }
-    .task input[type="checkbox"]:checked + .task-text {
-      text-decoration: line-through;
-      color: var(--text-muted);
-    }
-    .task-text {
-      font-size: 0.85rem;
-      transition: all 0.15s ease;
-    }
-    .task-tag {
-      font-size: 0.65rem;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      flex-shrink: 0;
-      margin-top: 1px;
-    }
-    .tag-critical { background: rgba(248,113,113,0.15); color: var(--danger); }
-    .tag-important { background: rgba(251,191,36,0.15); color: var(--warning); }
-    .tag-nice { background: rgba(52,211,153,0.15); color: var(--success); }
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 12px;
-      margin-bottom: 32px;
-    }
-    .metric-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px;
-      text-align: center;
-    }
-    .metric-card .value {
-      font-size: 1.6rem;
-      font-weight: 800;
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--accent-glow);
-    }
-    .metric-card .label {
-      font-size: 0.7rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-top: 4px;
-    }
-    .section-title {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-muted);
-      margin-bottom: 12px;
-      margin-top: 8px;
-    }
-    .note {
-      background: rgba(251,191,36,0.08);
-      border: 1px solid rgba(251,191,36,0.15);
-      border-radius: 8px;
-      padding: 12px 16px;
-      font-size: 0.8rem;
-      color: var(--warning);
-      margin-top: 24px;
-    }
-    .note strong { color: var(--warning); }
-    footer {
-      margin-top: 40px;
-      padding-top: 20px;
-      border-top: 1px solid var(--border);
-      font-size: 0.7rem;
-      color: var(--text-muted);
-      text-align: center;
-    }
-    @media (prefers-reduced-motion: reduce) {
-      * { transition: none !important; }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MSE → YC F26 Action Plan</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --card: rgba(255,255,255,0.03);
+    --card-hover: rgba(255,255,255,0.06);
+    --border: rgba(255,255,255,0.06);
+    --text: #fafafa;
+    --text-muted: #71717a;
+    --indigo: #6366f1;
+    --indigo-dim: rgba(99,102,241,0.15);
+    --green: #22c55e;
+    --green-dim: rgba(34,197,94,0.15);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245,158,11,0.15);
+    --red: #ef4444;
+    --red-dim: rgba(239,68,68,0.15);
+    --cyan: #06b6d4;
+    --cyan-dim: rgba(6,182,212,0.15);
+    --purple: #a855f7;
+    --purple-dim: rgba(168,85,247,0.15);
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', -apple-system, sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    padding: 40px 20px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+  .fade-in { animation: fadeIn 0.4s ease-out both; }
+
+  /* Header */
+  .header { text-align: center; margin-bottom: 48px; }
+  .header h1 { font-size: 2rem; font-weight: 700; margin-bottom: 8px; }
+  .header h1 span { color: var(--indigo); }
+  .header p { color: var(--text-muted); font-size: 0.95rem; max-width: 600px; margin: 0 auto; }
+  .header .deadline {
+    display: inline-block;
+    margin-top: 16px;
+    padding: 8px 20px;
+    background: var(--red-dim);
+    border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--red);
+  }
+
+  /* Progress Bar */
+  .progress-section { margin-bottom: 40px; }
+  .progress-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+  .progress-header span { font-size: 0.85rem; color: var(--text-muted); }
+  .progress-header strong { font-size: 0.85rem; color: var(--indigo); }
+  .progress-track {
+    height: 8px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--indigo), var(--purple));
+    border-radius: 4px;
+    transition: width 0.6s ease;
+  }
+
+  /* Phase */
+  .phase {
+    margin-bottom: 32px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    animation: fadeIn 0.4s ease-out both;
+  }
+  .phase:nth-child(2) { animation-delay: 0.05s; }
+  .phase:nth-child(3) { animation-delay: 0.1s; }
+  .phase:nth-child(4) { animation-delay: 0.15s; }
+  .phase:nth-child(5) { animation-delay: 0.2s; }
+
+  .phase-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    background: var(--card);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+  }
+  .phase-header:hover { background: var(--card-hover); }
+  .phase-badge {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+  .badge-critical { background: var(--red-dim); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
+  .badge-high { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
+  .badge-medium { background: var(--cyan-dim); color: var(--cyan); border: 1px solid rgba(6,182,212,0.2); }
+  .badge-low { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,197,94,0.2); }
+  .phase-title { font-size: 1rem; font-weight: 600; flex: 1; }
+  .phase-week { font-size: 0.75rem; color: var(--text-muted); font-family: var(--mono); }
+  .phase-toggle {
+    width: 20px; height: 20px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+  }
+  .phase.open .phase-toggle { transform: rotate(180deg); }
+
+  .phase-body { display: none; padding: 0 20px 16px; }
+  .phase.open .phase-body { display: block; }
+
+  /* Task */
+  .task {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .task:last-child { border-bottom: none; }
+  .task input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-top: 2px;
+    transition: all 0.15s;
+    position: relative;
+  }
+  .task input[type="checkbox"]:checked {
+    background: var(--indigo);
+    border-color: var(--indigo);
+  }
+  .task input[type="checkbox"]:checked::after {
+    content: '✓';
+    position: absolute;
+    top: -1px; left: 2px;
+    font-size: 12px;
+    color: white;
+    font-weight: 700;
+  }
+  .task-content { flex: 1; }
+  .task-title { font-size: 0.9rem; font-weight: 500; }
+  .task.done .task-title { text-decoration: line-through; color: var(--text-muted); }
+  .task-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+  .task-effort {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-family: var(--mono);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  /* Score Card */
+  .scores {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 40px;
+  }
+  .score-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .score-card .score {
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-family: var(--mono);
+  }
+  .score-card .label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 4px;
+  }
+  .score-red { color: var(--red); }
+  .score-amber { color: var(--amber); }
+  .score-green { color: var(--green); }
+  .score-cyan { color: var(--cyan); }
+
+  /* Notes */
+  .notes {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 32px;
+  }
+  .notes h3 { font-size: 0.85rem; margin-bottom: 8px; color: var(--amber); }
+  .notes textarea {
+    width: 100%;
+    min-height: 80px;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 24px 0;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    border-top: 1px solid var(--border);
+    margin-top: 32px;
+  }
+</style>
 </head>
 <body>
 
+<div class="header fade-in">
   <h1>MSE → <span>YC F26</span> Action Plan</h1>
-  <p class="subtitle">4-week sprint to YC application. Check off tasks as you go.</p>
+  <p>From engineering prototype to venture-backable startup. 28 tasks across 4 phases.</p>
+  <div class="deadline">⏰ Deadline: July 27, 2026 — 8:00 PM PT</div>
+</div>
 
-  <div class="deadline-banner">
-    <span class="icon">🎯</span>
-    <div>
-      <div class="label">YC F26 Application Deadline</div>
-      <div class="date">July 27, 2026 — 8:00 PM PT</div>
+<!-- Scores -->
+<div class="scores fade-in">
+  <div class="score-card">
+    <div class="score score-cyan">5.5</div>
+    <div class="label">Overall</div>
+  </div>
+  <div class="score-card">
+    <div class="score score-green">7</div>
+    <div class="label">Problem</div>
+  </div>
+  <div class="score-card">
+    <div class="score score-red">4</div>
+    <div class="label">Market</div>
+  </div>
+  <div class="score-card">
+    <div class="score score-amber">5</div>
+    <div class="label">Product</div>
+  </div>
+  <div class="score-card">
+    <div class="score score-red">3</div>
+    <div class="label">Business</div>
+  </div>
+  <div class="score-card">
+    <div class="score score-red">2</div>
+    <div class="label">GTM</div>
+  </div>
+  <div class="score-card">
+    <div class="score score-amber">4</div>
+    <div class="label">Founder Fit</div>
+  </div>
+  <div class="score-card">
+    <div class="score score-red">3</div>
+    <div class="label">YC Ready</div>
+  </div>
+</div>
+
+<!-- Progress -->
+<div class="progress-section fade-in" id="progress-section">
+  <div class="progress-header">
+    <span>Overall Progress</span>
+    <strong id="progress-text">0 / 28</strong>
+  </div>
+  <div class="progress-track">
+    <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+  </div>
+</div>
+
+<!-- Phase 1 -->
+<div class="phase open" id="phase-1">
+  <div class="phase-header" onclick="togglePhase('phase-1')">
+    <span class="phase-badge badge-critical">Week 1–2</span>
+    <span class="phase-title">🚀 Traction & Community Launch</span>
+    <span class="phase-week">10 tasks</span>
+    <span class="phase-toggle">▾</span>
+  </div>
+  <div class="phase-body">
+    <div class="task" data-key="p1t1">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Draft Show HN post — "I built SLO-gated canary migrations for Postgres"</div>
+        <div class="task-meta">Title, first comment, demo GIF, GitHub link. Post to hacker-news.</div>
+      </div>
+      <span class="task-effort">2h</span>
+    </div>
+    <div class="task" data-key="p1t2">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Record 60s demo video for YC application</div>
+        <div class="task-meta">Plan → State Machine → Canary → Rollback. Screen record + voiceover.</div>
+      </div>
+      <span class="task-effort">3h</span>
+    </div>
+    <div class="task" data-key="p1t3">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Post on r/postgresql — "Show HN: Open-source SLO-gated canary migrations"</div>
+        <div class="task-meta">Cross-post with HN. Include demo GIF and 3-command quickstart.</div>
+      </div>
+      <span class="task-effort">1h</span>
+    </div>
+    <div class="task" data-key="p1t4">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Post on r/devops and r/SRE</div>
+        <div class="task-meta">Frame as "how we solve schema migration incidents at scale."</div>
+      </div>
+      <span class="task-effort">1h</span>
+    </div>
+    <div class="task" data-key="p1t5">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Publish blog post #1: "Why Schema Migrations Kill Production"</div>
+        <div class="task-meta">Dev.to + personal blog. SEO-optimized. Include stats and horror stories.</div>
+      </div>
+      <span class="task-effort">4h</span>
+    </div>
+    <div class="task" data-key="p1t6">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Publish blog post #2: "SLO-Gated Canary: How We Automated Migration Safety"</div>
+        <div class="task-meta">Technical deep dive. Explain state machine, parity verification, auto-rollback.</div>
+      </div>
+      <span class="task-effort">4h</span>
+    </div>
+    <div class="task" data-key="p1t7">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Create waitlist landing page with email capture</div>
+        <div class="task-meta">Simple single-page: problem, solution, CTA. Use Carrd or similar (free).</div>
+      </div>
+      <span class="task-effort">2h</span>
+    </div>
+    <div class="task" data-key="p1t8">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Post on Postgres Discord (#tools channel)</div>
+        <div class="task-meta">Introduce MSE, ask for feedback. Don't spam — be genuine.</div>
+      </div>
+      <span class="task-effort">30m</span>
+    </div>
+    <div class="task" data-key="p1t9">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Set up GitHub Discussions for community</div>
+        <div class="task-meta">Enable Discussions tab. Create categories: Q&A, Ideas, Show & Tell.</div>
+      </div>
+      <span class="task-effort">30m</span>
+    </div>
+    <div class="task" data-key="p1t10">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Submit to Dev.to, Hashnode, and Lobsters</div>
+        <div class="task-meta">Cross-post blog #1 across all dev communities.</div>
+      </div>
+      <span class="task-effort">1h</span>
     </div>
   </div>
+</div>
 
-  <div class="section-title">Target Metrics by July 27</div>
-  <div class="metrics">
-    <div class="metric-card">
-      <div class="value">100+</div>
-      <div class="label">GitHub Stars</div>
+<!-- Phase 2 -->
+<div class="phase" id="phase-2">
+  <div class="phase-header" onclick="togglePhase('phase-2')">
+    <span class="phase-badge badge-high">Week 2–3</span>
+    <span class="phase-title">🏗️ Product Gaps — Make It Production-Ready</span>
+    <span class="phase-week">8 tasks</span>
+    <span class="phase-toggle">▾</span>
+  </div>
+  <div class="phase-body">
+    <div class="task" data-key="p2t1">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Build GitHub Actions integration</div>
+        <div class="task-meta">GitHub Action that runs MSE migration plan as part of CI/CD pipeline. Publish to Marketplace.</div>
+      </div>
+      <span class="task-effort">3d</span>
     </div>
-    <div class="metric-card">
-      <div class="value">3+</div>
-      <div class="label">Beta Users / LOIs</div>
+    <div class="task" data-key="p2t2">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Add real SLO source integration (Prometheus API)</div>
+        <div class="task-meta">Canary should pull p99/error-rate from Prometheus, not simulate. Configurable query.</div>
+      </div>
+      <span class="task-effort">2d</span>
     </div>
-    <div class="metric-card">
-      <div class="value">60s</div>
-      <div class="label">Demo Video</div>
+    <div class="task" data-key="p2t3">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Add Slack/PagerDuty webhook notifications</div>
+        <div class="task-meta">Notify on: migration started, canary step passed, SLO breach, rollback triggered, migration complete.</div>
+      </div>
+      <span class="task-effort">1d</span>
     </div>
-    <div class="metric-card">
-      <div class="value">3</div>
-      <div class="label">Blog Posts</div>
+    <div class="task" data-key="p2t4">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Add migration history view (not just current state)</div>
+        <div class="task-meta">Dashboard should show all past migrations with outcomes, timelines, and metrics.</div>
+      </div>
+      <span class="task-effort">1d</span>
+    </div>
+    <div class="task" data-key="p2t5">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Add team RBAC (admin, operator, viewer roles)</div>
+        <div class="task-meta">Enterprise buyers require this. Simple JWT-based auth.</div>
+      </div>
+      <span class="task-effort">2d</span>
+    </div>
+    <div class="task" data-key="p2t6">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Write API documentation (OpenAPI/Swagger)</div>
+        <div class="task-meta">Auto-generate from route definitions. Host at /docs.</div>
+      </div>
+      <span class="task-effort">1d</span>
+    </div>
+    <div class="task" data-key="p2t7">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Add e2e test suite (Playwright for frontend, integration for backend)</div>
+        <div class="task-meta">Test: happy path, rollback, crash-resume, drift detection. CI must pass.</div>
+      </div>
+      <span class="task-effort">2d</span>
+    </div>
+    <div class="task" data-key="p2t8">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Add MySQL support (stretch: Vitess/CockroachDB)</div>
+        <div class="task-meta">Abstract database driver layer. MySQL is 2nd most popular. Doubles TAM.</div>
+      </div>
+      <span class="task-effort">5d</span>
     </div>
   </div>
+</div>
 
-  <!-- WEEK 1 -->
-  <div class="week">
-    <div class="week-header">
-      <span class="week-title">Week 1 — Traction & Validation</span>
-      <span class="week-date">Jun 28 – Jul 4</span>
+<!-- Phase 3 -->
+<div class="phase" id="phase-3">
+  <div class="phase-header" onclick="togglePhase('phase-3')">
+    <span class="phase-badge badge-high">Week 2–4</span>
+    <span class="phase-title">💰 Customer Discovery & Business Model</span>
+    <span class="phase-week">6 tasks</span>
+    <span class="phase-toggle">▾</span>
+  </div>
+  <div class="phase-body">
+    <div class="task" data-key="p3t1">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Interview 20 SRE/Platform engineers about migration pain</div>
+        <div class="task-meta">Target: companies with 50-500 person eng teams. Ask about incidents, runbooks, tooling. Record quotes.</div>
+      </div>
+      <span class="task-effort">2w</span>
     </div>
-    <div class="week-body">
-      <div class="task">
-        <input type="checkbox" id="w1t1">
-        <label class="task-text" for="w1t1">Use MSE on a real Shutterfly Postgres table (even non-critical)</label>
-        <span class="task-tag tag-critical">Critical</span>
+    <div class="task" data-key="p3t2">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Define pricing model based on interviews</div>
+        <div class="task-meta">Options: per-database/mo, per-migration, flat rate. Test willingness to pay at $49, $149, $299.</div>
       </div>
-      <div class="task">
-        <input type="checkbox" id="w1t2">
-        <label class="task-text" for="w1t2">Record 60-second demo video (plan → state machine → canary → rollback)</label>
-        <span class="task-tag tag-critical">Critical</span>
+      <span class="task-effort">3d</span>
+    </div>
+    <div class="task" data-key="p3t3">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Calculate TAM / SAM / SOM with real numbers</div>
+        <div class="task-meta">How many Postgres teams? How much do they spend on migration tooling? What's the market gap?</div>
       </div>
-      <div class="task">
-        <input type="checkbox" id="w1t3">
-        <label class="task-text" for="w1t3">Post "Show HN: SLO-gated canary migrations for Postgres"</label>
-        <span class="task-tag tag-critical">Critical</span>
+      <span class="task-effort">1d</span>
+    </div>
+    <div class="task" data-key="p3t4">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Get 3 letters of intent / early adopters</div>
+        <div class="task-meta">Ask 3 companies to commit to trying MSE in production. Get their logo + quote.</div>
       </div>
-      <div class="task">
-        <input type="checkbox" id="w1t4">
-        <label class="task-text" for="w1t4">Post to r/postgresql, r/devops, Postgres Discord, Dev.to</label>
-        <span class="task-tag tag-important">Important</span>
+      <span class="task-effort">1w</span>
+    </div>
+    <div class="task" data-key="p3t5">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Use MSE on a real Shutterfly Postgres table</div>
+        <div class="task-meta">Real validation story. "I used this at my own company and it worked." Blog post opportunity.</div>
       </div>
-      <div class="task">
-        <input type="checkbox" id="w1t5">
-        <label class="task-text" for="w1t5">Get 50+ GitHub stars</label>
-        <span class="task-tag tag-critical">Critical</span>
+      <span class="task-effort">1d</span>
+    </div>
+    <div class="task" data-key="p3t6">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Document the "why now" narrative</div>
+        <div class="task-meta">Why is this the right time? PostgreSQL adoption surge? AI/ML data pipelines? Cloud migration wave?</div>
       </div>
-      <div class="task">
-        <input type="checkbox" id="w1t6">
-        <label class="task-text" for="w1t6">Start hosted public demo (mse-demo.serveousercontent.com)</label>
-        <span class="task-tag tag-important">Important</span>
-      </div>
+      <span class="task-effort">2h</span>
     </div>
   </div>
+</div>
 
-  <!-- WEEK 2 -->
-  <div class="week">
-    <div class="week-header">
-      <span class="week-title">Week 2 — Content & Community</span>
-      <span class="week-date">Jul 5 – Jul 11</span>
+<!-- Phase 4 -->
+<div class="phase" id="phase-4">
+  <div class="phase-header" onclick="togglePhase('phase-4')">
+    <span class="phase-badge badge-medium">Week 3–4</span>
+    <span class="phase-title">👥 Team & YC Application</span>
+    <span class="phase-week">4 tasks</span>
+    <span class="phase-toggle">▾</span>
+  </div>
+  <div class="phase-body">
+    <div class="task" data-key="p4t1">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Find a co-founder (business/commercial)</div>
+        <div class="task-meta">YC prefers 2-3 person teams. Need someone with SaaS sales, GTM, or domain expertise. Check YC Co-founder Matching.</div>
+      </div>
+      <span class="task-effort">ongoing</span>
     </div>
-    <div class="week-body">
-      <div class="task">
-        <input type="checkbox" id="w2t1">
-        <label class="task-text" for="w2t1">Write blog post: "Why your migration tool doesn't protect your SLOs"</label>
-        <span class="task-tag tag-critical">Critical</span>
+    <div class="task" data-key="p4t2">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Talk to 3 YC alumni for warm intros</div>
+        <div class="task-meta">Use YC alumni network, LinkedIn, Twitter. Ask for advice, not intros (ints follow).</div>
       </div>
-      <div class="task">
-        <input type="checkbox" id="w2t2">
-        <label class="task-text" for="w2t2">Write blog post: "Crash-resume for Postgres migrations: how it works"</label>
-        <span class="task-tag tag-important">Important</span>
+      <span class="task-effort">1w</span>
+    </div>
+    <div class="task" data-key="p4t3">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Draft YC application answers</div>
+        <div class="task-meta">Key questions: What does your company do? Who are your users? How do you know people want this? What's unique about your team?</div>
       </div>
-      <div class="task">
-        <input type="checkbox" id="w2t3">
-        <label class="task-text" for="w2t3">Publish demo video on YouTube + X/Twitter</label>
-        <span class="task-tag tag-important">Important</span>
+      <span class="task-effort">1d</span>
+    </div>
+    <div class="task" data-key="p4t4">
+      <input type="checkbox" onchange="save()">
+      <div class="task-content">
+        <div class="task-title">Submit YC F26 application</div>
+        <div class="task-meta">Deadline: July 27, 2026, 8:00 PM PT. Include demo video, GitHub link, traction metrics.</div>
       </div>
-      <div class="task">
-        <input type="checkbox" id="w2t4">
-        <label class="task-text" for="w2t4">Engage with every GitHub star, issue, comment</label>
-        <span class="task-tag tag-nice">Nice</span>
-      </div>
-      <div class="task">
-        <input type="checkbox" id="w2t5">
-        <label class="task-text" for="w2t5">Find 1-2 beta users (other SREs, Postgres shops)</label>
-        <span class="task-tag tag-critical">Critical</span>
-      </div>
-      <div class="task">
-        <input type="checkbox" id="w2t6">
-        <label class="task-text" for="w2t6">Reach out to potential co-founders (3-5 people)</label>
-        <span class="task-tag tag-critical">Critical</span>
-      </div>
+      <span class="task-effort">1d</span>
     </div>
   </div>
+</div>
 
-  <!-- WEEK 3 -->
-  <div class="week">
-    <div class="week-header">
-      <span class="week-title">Week 3 — Co-founder & Traction</span>
-      <span class="week-date">Jul 12 – Jul 18</span>
-    </div>
-    <div class="week-body">
-      <div class="task">
-        <input type="checkbox" id="w3t1">
-        <label class="task-text" for="w3t1">Lock in co-founder (or write clear conviction why solo)</label>
-        <span class="task-tag tag-critical">Critical</span>
-      </div>
-      <div class="task">
-        <input type="checkbox" id="w3t2">
-        <label class="task-text" for="w3t2">Get 100+ GitHub stars</label>
-        <span class="task-tag tag-critical">Critical</span>
-      </div>
-      <div class="task">
-        <input type="checkbox" id="w3t3">
-        <label class="task-text" for="w3t3">Get 3+ beta users or letters of intent</label>
-        <span class="task-tag tag-critical">Critical</span>
-      </div>
-      <div class="task">
-        <input type="checkbox" id="w3t4">
-        <label class="task-text" for="w3t4">Write blog post: "SLO-gated canary: how we catch SLO breaches before they hit production"</label>
-        <span class="task-tag tag-important">Important</span>
-      </div>
-      <div class="task">
-        <input type="checkbox" id="w3t5">
-        <label class="task-text" for="w3t5">Polish README with video embed, badges, screenshots</label>
-        <span class="task-tag tag-important">Important</span>
-      </div>
-      <div class="task">
-        <input type="checkbox" id="w3t6">
-        <label class="task-text" for="w3t6">Get feedback on product from 2-3 YC alumni</label>
-        <span class="task-tag tag-nice">Nice</span>
-      </div>
-    </div>
-  </div>
+<!-- Notes -->
+<div class="notes fade-in">
+  <h3>📝 Notes</h3>
+  <textarea id="notes" placeholder="Track your thoughts, meeting notes, ideas here..." oninput="saveNotes()"></textarea>
+</div>
 
-  <!-- WEEK 4 -->
-  <div class="week">
-    <div class="week-header">
-      <span class="week-title">Week 4 — YC Application</span>
-      <span class="week-date">Jul 19 – Jul 27</span>
-    </div>
-    <div class="week-body">
-      <div class="task">
-        <input type="checkbox" id="w4t1">
-        <label class="task-text" for="w4t1">Draft all YC application answers</label>
-        <span class="task-tag tag-critical">Critical</span>
-      </div>
-      <div class="task">
-        <input type="checkbox" id="w4t2">
-        <label class="task-text" for="w4t2">Record 60s YC intro video</label>
-        <span class="task-tag tag-critical">Critical</span>
-      </div>
-      <div class="task">
-        <input type="checkbox" id="w4t3">
-        <label class="task-text" for="w4t3">Get application reviewed by YC alumni</label>
-        <span class="task-tag tag-critical">Critical</span>
-      </div>
-      <div class="task">
-        <input type="checkbox" id="w4t4">
-        <label class="task-text" for="w4t4">Prepare for YC interview (practice 10-min pitch)</label>
-        <span class="task-tag tag-important">Important</span>
-      </div>
-      <div class="task">
-        <input type="checkbox" id="w4t5">
-        <label class="task-text" for="w4t5">Submit application by July 27, 8:00 PM PT</label>
-        <span class="task-tag tag-critical">Critical</span>
-      </div>
-    </div>
-  </div>
+<!-- Footer -->
+<div class="footer">
+  MSE Action Plan — Generated for YC F26 Application<br>
+  Deadline: July 27, 2026 · 28 tasks · 4 phases
+</div>
 
-  <div class="note">
-    <strong>Key insight:</strong> YC doesn't fund side projects — they fund companies.
-    The product is impressive. Build the company (traction, team, distribution) and YC becomes natural.
-  </div>
+<script>
+function togglePhase(id) {
+  document.getElementById(id).classList.toggle('open');
+}
 
-  <footer>
-    Migration Safety Engine — Action Plan — Generated Jun 27, 2026
-  </footer>
+function save() {
+  const state = {};
+  document.querySelectorAll('.task').forEach(t => {
+    const key = t.dataset.key;
+    const checked = t.querySelector('input').checked;
+    state[key] = checked;
+    t.classList.toggle('done', checked);
+  });
+  localStorage.setItem('mse-action-plan', JSON.stringify(state));
+  updateProgress();
+}
 
-  <script>
-    // Persist checkbox state in localStorage
-    document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-      const key = cb.id;
-      cb.checked = localStorage.getItem(key) === 'true';
-      cb.addEventListener('change', () => {
-        localStorage.setItem(key, cb.checked);
-      });
-    });
-  </script>
+function load() {
+  const raw = localStorage.getItem('mse-action-plan');
+  if (!raw) return;
+  const state = JSON.parse(raw);
+  document.querySelectorAll('.task').forEach(t => {
+    const key = t.dataset.key;
+    if (state[key]) {
+      t.querySelector('input').checked = true;
+      t.classList.add('done');
+    }
+  });
+  updateProgress();
+}
+
+function updateProgress() {
+  const total = document.querySelectorAll('.task').length;
+  const done = document.querySelectorAll('.task.done').length;
+  const pct = Math.round((done / total) * 100);
+  document.getElementById('progress-text').textContent = `${done} / ${total}`;
+  document.getElementById('progress-fill').style.width = pct + '%';
+}
+
+function saveNotes() {
+  localStorage.setItem('mse-action-plan-notes', document.getElementById('notes').value);
+}
+
+function loadNotes() {
+  const notes = localStorage.getItem('mse-action-plan-notes');
+  if (notes) document.getElementById('notes').value = notes;
+}
+
+load();
+loadNotes();
+</script>
+
 </body>
 </html>

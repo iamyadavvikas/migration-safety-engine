@@ -299,6 +299,48 @@ on_failure: rollback
 
 ---
 
+## Production Safety Layers
+
+MSE includes built-in safety safeguards for production DDL execution:
+
+### DDL Safety Executor (`internal/safety/ddl.go`)
+
+All DDL statements (expand, contract, rollback) are wrapped with:
+
+- **Lock Timeout**: `SET LOCAL lock_timeout = '3s'` — prevents DDL from waiting indefinitely for locks
+- **Statement Timeout**: `SET LOCAL statement_timeout = '60s'` — prevents runaway DDL from blocking the system
+- **Pre-flight Checks**: Queries `pg_stat_activity` for lock contention and `pg_stat_replication` for lag before executing
+- **Execution Logging**: All DDL executions are logged with timing, success/failure, and error messages
+
+### Adaptive Backfill Throttling (`internal/safety/throttle.go`)
+
+The backfill handler dynamically adjusts based on real-time DB health:
+
+- **Health Score**: Weighted composite of connection pool, replication lag, lock queue, and table bloat
+- **Dynamic Batch Size**: Adjusts from `MinBatchSize` to `MaxBatchSize` based on health
+- **Dynamic Throttle**: Adjusts from `MinThrottleMs` to `MaxThrottleMs` based on health
+- **Circuit Breaker**: Trips when health score drops below 0.1, preventing further writes
+
+### Safety Tables
+
+Three new tables track safety metrics:
+
+| Table | Purpose |
+|-------|---------|
+| `ddl_execution_log` | Records all DDL executions with timing and errors |
+| `backfill_progress` | Tracks batch progress with health metrics |
+| `canary_observation` | Logs canary step observations and SLO breaches |
+
+### API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /migrations/{id}/safety` | DDL execution logs for a migration |
+| `GET /migrations/{id}/backfill` | Backfill progress with health metrics |
+| `GET /migrations/{id}/canary` | Canary observations and SLO breaches |
+
+---
+
 ## Crash-Resume, Proven in Tests
 
 Four integration tests against a real Postgres:

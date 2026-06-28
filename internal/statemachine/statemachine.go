@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/iamyadavvikas/migration-safety-engine/internal/plan"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/safety"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/store"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/telemetry"
 )
@@ -77,20 +78,57 @@ type Runner struct {
 	log      *slog.Logger
 	handlers map[State]Handler
 
+	// Safety layers
+	ddlExecutor     *safety.DDLExecutor
+	adaptiveThrottle *safety.AdaptiveThrottle
+
 	// stepDelay paces transitions so progress is observable in demos/tests.
 	stepDelay time.Duration
 }
 
 // NewRunner builds a Runner whose handlers run real work against the target pool.
 func NewRunner(st *store.Store, target *pgxpool.Pool, log *slog.Logger) *Runner {
+	// Initialize safety layers
+	ddlConfig := safety.DefaultDDLConfig()
+	ddlExecutor := safety.NewDDLExecutor(target, ddlConfig, log)
+
+	backfillConfig := safety.DefaultBackfillConfig()
+	adaptiveThrottle := safety.NewAdaptiveThrottle(backfillConfig, ddlExecutor, log)
+
 	r := &Runner{
-		store:     st,
-		target:    target,
-		log:       log,
-		stepDelay: 200 * time.Millisecond,
+		store:           st,
+		target:          target,
+		log:             log,
+		ddlExecutor:     ddlExecutor,
+		adaptiveThrottle: adaptiveThrottle,
+		stepDelay:       200 * time.Millisecond,
 	}
 	r.handlers = r.defaultHandlers()
 	return r
+}
+
+// RegisterService registers a service as dependent on a migration.
+func (r *Runner) RegisterService(ctx context.Context, migrationID uuid.UUID, serviceName string, schemaVersion int) error {
+	_, err := r.store.RegisterService(ctx, migrationID, serviceName, schemaVersion)
+	if err != nil {
+		return fmt.Errorf("register service: %w", err)
+	}
+	r.log.Info("service registered", "migration", migrationID, "service", serviceName, "version", schemaVersion)
+	return nil
+}
+
+// UpdateServiceCompat updates a service's compatibility status.
+func (r *Runner) UpdateServiceCompat(ctx context.Context, migrationID uuid.UUID, serviceName string, compatible bool) error {
+	if err := r.store.UpdateServiceCompat(ctx, migrationID, serviceName, compatible); err != nil {
+		return fmt.Errorf("update service compat: %w", err)
+	}
+	r.log.Info("service compatibility updated", "migration", migrationID, "service", serviceName, "compatible", compatible)
+	return nil
+}
+
+// CheckAllServicesReady checks if all registered services are compatible.
+func (r *Runner) CheckAllServicesReady(ctx context.Context, migrationID uuid.UUID) (bool, int, error) {
+	return r.store.AllServicesReady(ctx, migrationID)
 }
 
 // SetStepDelay overrides the inter-step delay (tests use 0 for speed).
@@ -226,58 +264,91 @@ func (r *Runner) defaultHandlers() map[State]Handler {
 	}
 }
 
-// expand runs the plan's expand DDL on the target. Each statement runs outside a
-// transaction so CREATE INDEX CONCURRENTLY works; statements should be idempotent
-// (IF NOT EXISTS) so a resume after a partial expand is safe.
+// expand runs the plan's expand DDL on the target. Each statement runs with
+// safety checks (lock_timeout, statement_timeout, lock queue monitoring, replication lag).
 func (r *Runner) expand(ctx context.Context, rec *store.Record) (Result, error) {
 	for i, stmt := range rec.Plan.Expand {
-		if _, err := r.target.Exec(ctx, stmt); err != nil {
+		start := time.Now()
+
+		// Execute with safety wrapper
+		duration, err := r.ddlExecutor.ExecDDL(ctx, stmt)
+
+		// Log DDL execution
+		logEntry := &store.DDLExecutionLogEntry{
+			MigrationID:  rec.ID,
+			Statement:    stmt,
+			StartedAt:    start,
+			CompletedAt:  ptrTime(time.Now()),
+			DurationMs:   ptrInt(int(duration.Milliseconds())),
+			Success:      err == nil,
+			LockWaitMs:   0, // Would need to extract from error
+		}
+		if err != nil {
+			logEntry.ErrorMessage = err.Error()
+		}
+		if logErr := r.store.LogDDLExecution(ctx, logEntry); logErr != nil {
+			r.log.Warn("failed to log DDL execution", "err", logErr)
+		}
+
+		if err != nil {
 			return Result{}, fmt.Errorf("expand stmt %d (%q): %w", i, stmt, err)
 		}
-		r.log.Info("expand applied", "migration", rec.ID, "stmt", stmt)
+		r.log.Info("expand applied", "migration", rec.ID, "stmt", stmt, "duration", duration)
 	}
 	return Result{Checkpoint: map[string]any{"expanded": len(rec.Plan.Expand)}}, nil
 }
 
-// backfill populates the new column in batches, throttled between batches, and
-// checkpoints progress after every batch. Resume is correct because each batch
-// only touches rows where the column IS NULL, so already-filled rows are skipped.
+// backfill populates the new column in batches, with adaptive throttling based on
+// real-time DB health metrics. Uses forward-only progress tracking with last_id
+// to ensure crash-resumability without re-processing rows.
 func (r *Runner) backfill(ctx context.Context, rec *store.Record) (Result, error) {
 	p := rec.Plan
 	col := p.Backfill.Column
 	if col == "" {
 		return Result{Checkpoint: map[string]any{"skipped": "no backfill column"}}, nil
 	}
+
+	// Initialize adaptive throttle with plan defaults
 	batch := p.Backfill.BatchSize
 	if batch <= 0 {
 		batch = 1000
 	}
-	throttle := time.Duration(p.Backfill.ThrottleMs) * time.Millisecond
+	r.adaptiveThrottle = safety.NewAdaptiveThrottle(
+		safety.BackfillConfig{
+			InitialBatchSize:  batch,
+			MinBatchSize:      100,
+			MaxBatchSize:      50000,
+			InitialThrottleMs: p.Backfill.ThrottleMs,
+			MinThrottleMs:     0,
+			MaxThrottleMs:     5000,
+		},
+		r.ddlExecutor,
+		r.log,
+	)
 
-	// done may be non-zero if we are resuming after a crash.
+	// Resume from checkpoint — forward-only progress tracking
+	var lastID int64
 	var done int64
+	if v, ok := rec.Checkpoint["last_id"].(float64); ok {
+		lastID = int64(v)
+	}
 	if v, ok := rec.Checkpoint["rows_done"].(float64); ok {
 		done = int64(v)
 	}
 
-	// Use composite UPDATE if available (multiple columns), otherwise single column
-	updSQL := p.Backfill.MultiSQL
-	if updSQL == "" {
-		// Single column backfill (legacy mode)
-		updSQL = fmt.Sprintf(
-			`UPDATE %s SET %s = (%s) WHERE id IN (SELECT id FROM %s WHERE %s IS NULL ORDER BY id LIMIT $1)`,
-			p.Table, col, p.Backfill.SourceExpr, p.Table, col,
-		)
-	}
-
-	// remaining rows still needing a value; total = done + remaining.
+	// Count remaining rows for telemetry
 	var remaining int64
-	countSQL := fmt.Sprintf(`SELECT count(*) FROM %s WHERE %s IS NULL`, p.Table, col)
-	if err := r.target.QueryRow(ctx, countSQL).Scan(&remaining); err != nil {
+	countSQL := fmt.Sprintf(`SELECT count(*) FROM %s WHERE %s IS NULL AND id > $1`, p.Table, col)
+	if err := r.target.QueryRow(ctx, countSQL, lastID).Scan(&remaining); err != nil {
 		return Result{}, fmt.Errorf("count remaining: %w", err)
 	}
 	total := done + remaining
 	telemetry.SetBackfill(rec.ID.String(), p.ID, total, done)
+
+	batchNum := 0
+	if v, ok := rec.Checkpoint["batch_num"].(float64); ok {
+		batchNum = int(v)
+	}
 
 	for {
 		select {
@@ -286,22 +357,112 @@ func (r *Runner) backfill(ctx context.Context, rec *store.Record) (Result, error
 		default:
 		}
 
-		tag, err := r.target.Exec(ctx, updSQL, batch)
+		// Check circuit breaker — pause instead of fail
+		if r.adaptiveThrottle.IsCircuitTripped() {
+			r.log.Warn("circuit breaker tripped, pausing backfill", "migration", rec.ID)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		// Update health metrics and adjust throttle
+		if err := r.adaptiveThrottle.UpdateHealth(ctx); err != nil {
+			r.log.Warn("failed to update health metrics", "err", err)
+		}
+
+		// Use adaptive batch size
+		currentBatch := r.adaptiveThrottle.GetBatchSize()
+
+		// Forward-only UPDATE with idempotent expression
+		// Uses subquery with id > $last_id to ensure we never re-process rows
+		var updSQL string
+		if p.Backfill.MultiSQL != "" {
+			// Composite multi-column backfill
+			updSQL = fmt.Sprintf(`
+				UPDATE %s SET %s
+				WHERE id IN (
+					SELECT id FROM %s 
+					WHERE %s IS NULL 
+					  AND id > $1
+					ORDER BY id 
+					LIMIT $2
+				)`, p.Table, p.Backfill.MultiSQL, p.Table, col)
+		} else {
+			// Single column backfill
+			updSQL = fmt.Sprintf(`
+				UPDATE %s SET %s = (%s)
+				WHERE id IN (
+					SELECT id FROM %s 
+					WHERE %s IS NULL 
+					  AND id > $1
+					ORDER BY id 
+					LIMIT $2
+				)`, p.Table, col, p.Backfill.SourceExpr, p.Table, col)
+		}
+
+		tag, err := r.target.Exec(ctx, updSQL, lastID, currentBatch)
 		if err != nil {
 			return Result{}, fmt.Errorf("backfill batch: %w", err)
 		}
 		n := tag.RowsAffected()
 		if n == 0 {
+			break // All rows processed
+		}
+
+		// Get the max ID we just processed for forward-only progress
+		var newLastID int64
+		err = r.target.QueryRow(ctx, fmt.Sprintf(`
+			SELECT COALESCE(MAX(id), 0) FROM %s 
+			WHERE %s IS NOT NULL AND id > $1`, 
+			p.Table, col), lastID).Scan(&newLastID)
+		if err != nil {
+			return Result{}, fmt.Errorf("get last id: %w", err)
+		}
+
+		// Ensure forward progress
+		if newLastID <= lastID {
+			r.log.Warn("no forward progress, breaking", 
+				"last_id", lastID, "new_last_id", newLastID)
 			break
 		}
+
+		lastID = newLastID
 		done += n
+		batchNum++
+
+		// Log backfill progress with health metrics
+		healthMetrics, _ := r.ddlExecutor.CollectHealthMetrics(ctx)
+		progressEntry := &store.BackfillProgressEntry{
+			MigrationID:  rec.ID,
+			BatchNumber:  batchNum,
+			RowsAffected: int(n),
+			ThrottleMs:   r.adaptiveThrottle.GetThrottleMs(),
+		}
+		if healthMetrics != nil {
+			progressEntry.DBCPUPct = healthMetrics.CPUPercent
+			progressEntry.DBRepLagMs = healthMetrics.Replication.MaxLagMs
+			progressEntry.DBConnsPct = float64(healthMetrics.ActiveConns) / float64(healthMetrics.MaxConns) * 100
+		}
+		if logErr := r.store.LogBackfillProgress(ctx, progressEntry); logErr != nil {
+			r.log.Warn("failed to log backfill progress", "err", logErr)
+		}
+
 		telemetry.SetBackfill(rec.ID.String(), p.ID, total, done)
 		if err := r.store.SaveCheckpoint(ctx, rec.ID, string(StateBackfilling),
-			map[string]any{"rows_done": done}, fmt.Sprintf("backfilled %d/%d rows", done, total)); err != nil {
+			map[string]any{
+				"last_id":   lastID,
+				"rows_done": done,
+				"batch_num": batchNum,
+			},
+			fmt.Sprintf("backfilled %d/%d rows (batch %d, last_id=%d, %dms throttle)", 
+				done, total, batchNum, lastID, r.adaptiveThrottle.GetThrottleMs())); err != nil {
 			return Result{}, fmt.Errorf("checkpoint: %w", err)
 		}
-		r.log.Info("backfill progress", "migration", rec.ID, "done", done, "total", total)
+		r.log.Info("backfill progress", "migration", rec.ID, "done", done, "total", total,
+			"batch", batchNum, "last_id", lastID, "throttle_ms", r.adaptiveThrottle.GetThrottleMs(),
+			"batch_size", currentBatch)
 
+		// Adaptive throttle
+		throttle := time.Duration(r.adaptiveThrottle.GetThrottleMs()) * time.Millisecond
 		if throttle > 0 {
 			select {
 			case <-ctx.Done():
@@ -310,7 +471,7 @@ func (r *Runner) backfill(ctx context.Context, rec *store.Record) (Result, error
 			}
 		}
 	}
-	return Result{Checkpoint: map[string]any{"rows_done": done}}, nil
+	return Result{Checkpoint: map[string]any{"last_id": lastID, "rows_done": done, "batch_num": batchNum}}, nil
 }
 
 // verify runs a shadow-read parity check: it samples rows, recomputes the
@@ -373,6 +534,16 @@ func (r *Runner) verify(ctx context.Context, rec *store.Record) (Result, error) 
 // (on_failure=pause).
 func (r *Runner) canary(ctx context.Context, rec *store.Record) (Result, error) {
 	p := rec.Plan
+	
+	// Hard gate: check replication lag before starting canary
+	replStatus, err := r.ddlExecutor.CheckReplicationLag(ctx)
+	if err != nil {
+		r.log.Warn("failed to check replication lag, proceeding with caution", "err", err)
+	} else if replStatus.MaxLagMs > float64(p.SLO.MaxP99LatencyMs) {
+		return Result{}, fmt.Errorf("replication lag too high before canary: %.0fms (max: %dms)",
+			replStatus.MaxLagMs, p.SLO.MaxP99LatencyMs)
+	}
+	
 	for _, step := range p.Canary.Steps {
 		select {
 		case <-ctx.Done():
@@ -380,12 +551,53 @@ func (r *Runner) canary(ctx context.Context, rec *store.Record) (Result, error) 
 		default:
 		}
 
+		// Pre-flight: check replication lag before each canary step
+		replStatus, err := r.ddlExecutor.CheckReplicationLag(ctx)
+		if err != nil {
+			r.log.Warn("failed to check replication lag, proceeding with caution", 
+				"migration", rec.ID, "step", step, "err", err)
+		} else if replStatus.MaxLagMs > float64(p.SLO.MaxP99LatencyMs)*2 {
+			// Replication lag is 2x the p99 threshold — pause and wait
+			r.log.Warn("replication lag too high, waiting",
+				"migration", rec.ID, "step", step,
+				"lag_ms", replStatus.MaxLagMs, 
+				"threshold_ms", p.SLO.MaxP99LatencyMs*2)
+			time.Sleep(5 * time.Second)
+			// Re-check after waiting
+			replStatus, err = r.ddlExecutor.CheckReplicationLag(ctx)
+			if err == nil && replStatus.MaxLagMs > float64(p.SLO.MaxP99LatencyMs)*3 {
+				return Result{}, fmt.Errorf("replication lag still too high after wait: %.0fms",
+					replStatus.MaxLagMs)
+			}
+		}
+
 		obs := r.observeCanary(rec, step)
 		telemetry.SetCanaryStep(rec.ID.String(), p.ID, step)
+
+		// Log canary observation
+		observation := &store.CanaryObservationEntry{
+			MigrationID: rec.ID,
+			Step:        step,
+			TrafficPct:  step,
+			P99Ms:       obs.p99Ms,
+			ErrPct:      obs.errPct,
+			SLOBreached: false,
+			ObservedAt:  time.Now(),
+		}
+		if logErr := r.store.LogCanaryObservation(ctx, observation); logErr != nil {
+			r.log.Warn("failed to log canary observation", "err", logErr)
+		}
 
 		if breached, why := sloBreached(obs, p.SLO); breached {
 			r.log.Warn("canary SLO breach", "migration", rec.ID, "step", step, "why", why)
 			telemetry.IncRollback(p.ID)
+
+			// Log failed observation
+			observation.SLOBreached = true
+			if logErr := r.store.LogCanaryObservation(ctx, observation); logErr != nil {
+				r.log.Warn("failed to log canary observation", "err", logErr)
+			}
+
 			ckpt := map[string]any{"canary_pct": step, "slo_breach": why}
 			if p.OnFailure == plan.OnFailureRollback {
 				return Result{Checkpoint: ckpt, Next: StateRollingBack}, nil
@@ -458,24 +670,136 @@ func (r *Runner) cutover(ctx context.Context, rec *store.Record) (Result, error)
 // rollback runs the plan's rollback DDL to undo the expand (e.g. drop the new
 // column/index), returning the target to its pre-migration shape. The next map
 // routes RollingBack -> RolledBack (terminal).
+// Includes safety protocol: drain connections, retry with backoff, timeout.
 func (r *Runner) rollback(ctx context.Context, rec *store.Record) (Result, error) {
+	// Step 1: Drain connections (cancel long-running queries)
+	r.log.Info("rolling back: draining connections", "migration", rec.ID)
+	r.drainConnections(ctx)
+
+	// Step 2: Execute rollback DDL with retries
+	maxRetries := 3
+	retryDelay := time.Second
+	
 	for i, stmt := range rec.Plan.Rollback {
-		if _, err := r.target.Exec(ctx, stmt); err != nil {
-			return Result{}, fmt.Errorf("rollback stmt %d (%q): %w", i, stmt, err)
+		var lastErr error
+		
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			// Execute with safety wrapper
+			start := time.Now()
+			duration, err := r.ddlExecutor.ExecDDL(ctx, stmt)
+			lastErr = err
+
+			// Log DDL execution
+			logEntry := &store.DDLExecutionLogEntry{
+				MigrationID:  rec.ID,
+				Statement:    stmt,
+				StartedAt:    start,
+				CompletedAt:  ptrTime(time.Now()),
+				DurationMs:   ptrInt(int(duration.Milliseconds())),
+				Success:      err == nil,
+			}
+			if err != nil {
+				logEntry.ErrorMessage = err.Error()
+			}
+			if logErr := r.store.LogDDLExecution(ctx, logEntry); logErr != nil {
+				r.log.Warn("failed to log DDL execution", "err", logErr)
+			}
+
+			if err == nil {
+				r.log.Info("rollback applied", "migration", rec.ID, "stmt", stmt, "duration", duration)
+				lastErr = nil
+				break
+			}
+
+			// Retry with exponential backoff
+			if attempt < maxRetries-1 {
+				delay := retryDelay * time.Duration(1<<uint(attempt))
+				r.log.Warn("rollback stmt failed, retrying",
+					"migration", rec.ID,
+					"stmt_index", i,
+					"attempt", attempt+1,
+					"err", err,
+					"retry_in", delay)
+				time.Sleep(delay)
+			}
 		}
-		r.log.Info("rollback applied", "migration", rec.ID, "stmt", stmt)
+		
+		if lastErr != nil {
+			return Result{}, fmt.Errorf("rollback stmt %d (%q) failed after %d attempts: %w", 
+				i, stmt, maxRetries, lastErr)
+		}
 	}
+	
+	// Step 3: Verify rollback completed
+	r.verifyRollback(ctx, rec)
+	
 	return Result{Checkpoint: map[string]any{"rolled_back": len(rec.Plan.Rollback)}}, nil
+}
+
+// drainConnections cancels long-running queries to speed up rollback
+func (r *Runner) drainConnections(ctx context.Context) {
+	// Cancel queries running longer than 30 seconds (except our own)
+	_, err := r.target.Exec(ctx, `
+		SELECT pg_terminate_backend(pid)
+		FROM pg_stat_activity
+		WHERE state = 'active'
+		  AND query_start < now() - interval '30 seconds'
+		  AND query NOT LIKE '%pg_stat_activity%'
+		  AND query NOT LIKE '%migration_safety_engine%'`)
+	if err != nil {
+		r.log.Warn("failed to drain connections", "err", err)
+	}
+}
+
+// verifyRollback checks that rollback DDL was applied correctly
+func (r *Runner) verifyRollback(ctx context.Context, rec *store.Record) {
+	// Check that dropped columns no longer exist
+	for _, col := range rec.Plan.DropColumns {
+		var exists bool
+		err := r.target.QueryRow(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM information_schema.columns 
+				WHERE table_name = $1 AND column_name = $2
+			)`, rec.Plan.Table, col).Scan(&exists)
+		if err != nil {
+			r.log.Warn("failed to verify rollback", "err", err)
+			continue
+		}
+		if exists {
+			r.log.Error("column still exists after rollback", 
+				"migration", rec.ID, "column", col)
+		}
+	}
 }
 
 // contract runs the plan's contract DDL on the target (e.g. dropping the legacy
 // column). Statements should be idempotent (IF EXISTS) for safe resume.
 func (r *Runner) contract(ctx context.Context, rec *store.Record) (Result, error) {
 	for i, stmt := range rec.Plan.Contract {
-		if _, err := r.target.Exec(ctx, stmt); err != nil {
+		// Execute with safety wrapper
+		start := time.Now()
+		duration, err := r.ddlExecutor.ExecDDL(ctx, stmt)
+
+		// Log DDL execution
+		logEntry := &store.DDLExecutionLogEntry{
+			MigrationID:  rec.ID,
+			Statement:    stmt,
+			StartedAt:    start,
+			CompletedAt:  ptrTime(time.Now()),
+			DurationMs:   ptrInt(int(duration.Milliseconds())),
+			Success:      err == nil,
+		}
+		if err != nil {
+			logEntry.ErrorMessage = err.Error()
+		}
+		if logErr := r.store.LogDDLExecution(ctx, logEntry); logErr != nil {
+			r.log.Warn("failed to log DDL execution", "err", logErr)
+		}
+
+		if err != nil {
 			return Result{}, fmt.Errorf("contract stmt %d (%q): %w", i, stmt, err)
 		}
-		r.log.Info("contract applied", "migration", rec.ID, "stmt", stmt)
+		r.log.Info("contract applied", "migration", rec.ID, "stmt", stmt, "duration", duration)
 	}
 	return Result{Checkpoint: map[string]any{"contracted": len(rec.Plan.Contract)}}, nil
 }
@@ -512,4 +836,12 @@ func sloBreached(obs canaryObs, slo plan.SLO) (bool, string) {
 		return true, fmt.Sprintf("error-rate %.2f%% > %.2f%%", obs.errPct, slo.MaxErrorRatePct)
 	}
 	return false, ""
+}
+
+func ptrTime(t time.Time) *time.Time {
+	return &t
+}
+
+func ptrInt(i int) *int {
+	return &i
 }

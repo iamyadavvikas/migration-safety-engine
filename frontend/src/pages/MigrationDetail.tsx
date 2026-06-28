@@ -4,7 +4,13 @@ import { api } from '../lib/api'
 import { useToast } from '../components/Toast'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { POLL_INTERVAL_MS } from '../lib/constants'
-import type { MigrationRecord, SchemaColumn } from '../types'
+import type {
+  MigrationRecord,
+  SchemaColumn,
+  DDLExecutionLog,
+  BackfillProgress,
+  CanaryObservation,
+} from '../types'
 import { STATE_COLORS, STATE_LABELS, STATE_FLOW } from '../types'
 import StateMachineGraph from '../components/StateMachineGraph'
 import MetricsPanel from '../components/MetricsPanel'
@@ -19,6 +25,10 @@ export default function MigrationDetail() {
   const [showAbortConfirm, setShowAbortConfirm] = useState(false)
   const [schema, setSchema] = useState<SchemaColumn[]>([])
   const [schemaLoading, setSchemaLoading] = useState(false)
+  const [ddlLogs, setDdlLogs] = useState<DDLExecutionLog[]>([])
+  const [backfillProgress, setBackfillProgress] = useState<BackfillProgress[]>([])
+  const [canaryObs, setCanaryObs] = useState<CanaryObservation[]>([])
+  const [safetyLoading, setSafetyLoading] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const { toast } = useToast()
 
@@ -47,6 +57,25 @@ export default function MigrationDetail() {
     }
   }, [])
 
+  const fetchSafetyData = useCallback(async () => {
+    if (!id) return
+    setSafetyLoading(true)
+    try {
+      const [safety, backfill, canary] = await Promise.all([
+        api.getSafetyMetrics(id),
+        api.getBackfillProgress(id),
+        api.getCanaryObservations(id),
+      ])
+      setDdlLogs(safety.ddl_logs)
+      setBackfillProgress(backfill.progress)
+      setCanaryObs(canary.observations)
+    } catch (e) {
+      console.error('Failed to fetch safety data:', e)
+    } finally {
+      setSafetyLoading(false)
+    }
+  }, [id])
+
   useEffect(() => { fetchRecord() }, [fetchRecord])
 
   useEffect(() => {
@@ -64,6 +93,12 @@ export default function MigrationDetail() {
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [record?.terminal, fetchRecord])
+
+  useEffect(() => {
+    fetchSafetyData()
+    const safetyPoll = setInterval(fetchSafetyData, 5000)
+    return () => clearInterval(safetyPoll)
+  }, [fetchSafetyData])
 
   const currentIdx = record ? STATE_FLOW.indexOf(record.state) : -1
   const isLive = record && !record.terminal
@@ -290,6 +325,154 @@ export default function MigrationDetail() {
 
           {/* Real-time Metrics */}
           <MetricsPanel migrationId={record.migration_id} planId={record.plan_id} isLive={!!isLive} />
+
+          {/* Safety Metrics */}
+          <div className="card fade-in" style={{ animationDelay: '0.11s' }}>
+            <div className="card-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                  <path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4L8 1z"/>
+                  <path d="M5.5 8l2 2 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <span>Production Safety</span>
+              </div>
+              {safetyLoading && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Loading...</span>
+              )}
+            </div>
+            <div className="card-body" style={{ padding: 0 }}>
+              {ddlLogs.length === 0 && backfillProgress.length === 0 && canaryObs.length === 0 ? (
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  No safety data yet. Safety metrics appear as the migration progresses.
+                </div>
+              ) : (
+                <div style={{ padding: '16px 20px' }}>
+                  {/* DDL Execution Logs */}
+                  {ddlLogs.length > 0 && (
+                    <div style={{ marginBottom: 20 }}>
+                      <h4 style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 12, color: 'var(--text-secondary)' }}>
+                        DDL Executions ({ddlLogs.length})
+                      </h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {ddlLogs.map((log) => (
+                          <div
+                            key={log.id}
+                            style={{
+                              padding: '12px 16px',
+                              background: log.success ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                              border: `1px solid ${log.success ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+                              borderRadius: 'var(--radius)',
+                              fontFamily: 'JetBrains Mono, monospace',
+                              fontSize: '0.75rem',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                              <span style={{ color: log.success ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
+                                {log.success ? 'SUCCESS' : 'FAILED'}
+                              </span>
+                              <span style={{ color: 'var(--text-muted)' }}>
+                                {log.duration_ms !== null ? `${log.duration_ms}ms` : '—'}
+                              </span>
+                            </div>
+                            <div style={{ color: 'var(--text-secondary)', wordBreak: 'break-all' }}>
+                              {log.statement.length > 120 ? log.statement.slice(0, 120) + '...' : log.statement}
+                            </div>
+                            {log.error_message && (
+                              <div style={{ marginTop: 8, color: 'var(--danger)', fontSize: '0.7rem' }}>
+                                {log.error_message}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Backfill Progress */}
+                  {backfillProgress.length > 0 && (
+                    <div style={{ marginBottom: 20 }}>
+                      <h4 style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 12, color: 'var(--text-secondary)' }}>
+                        Backfill Batches ({backfillProgress.length})
+                      </h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {backfillProgress.slice(-5).map((bp) => (
+                          <div
+                            key={bp.id}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '60px 1fr 80px 80px 80px',
+                              gap: 12,
+                              padding: '8px 12px',
+                              background: 'rgba(0, 0, 0, 0.15)',
+                              borderRadius: 'var(--radius)',
+                              fontSize: '0.75rem',
+                              fontFamily: 'JetBrains Mono, monospace',
+                            }}
+                          >
+                            <span style={{ color: 'var(--text-muted)' }}>#{bp.batch_number}</span>
+                            <span style={{ color: 'var(--accent)' }}>+{bp.rows_affected} rows</span>
+                            <span style={{ color: 'var(--text-muted)' }}>{bp.throttle_ms}ms</span>
+                            <span style={{ color: 'var(--text-muted)' }}>
+                              {bp.db_cpu_pct !== null ? `${bp.db_cpu_pct.toFixed(1)}% CPU` : '—'}
+                            </span>
+                            <span style={{ color: 'var(--text-muted)' }}>
+                              {bp.db_rep_lag_ms !== null ? `${bp.db_rep_lag_ms.toFixed(0)}ms lag` : '—'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Canary Observations */}
+                  {canaryObs.length > 0 && (
+                    <div>
+                      <h4 style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 12, color: 'var(--text-secondary)' }}>
+                        Canary Observations ({canaryObs.length})
+                      </h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {canaryObs.map((obs) => (
+                          <div
+                            key={obs.id}
+                            style={{
+                              padding: '12px 16px',
+                              background: obs.slo_breached ? 'rgba(239, 68, 68, 0.05)' : 'rgba(34, 197, 94, 0.05)',
+                              border: `1px solid ${obs.slo_breached ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)'}`,
+                              borderRadius: 'var(--radius)',
+                              fontSize: '0.8rem',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                              <span style={{ fontWeight: 600, color: obs.slo_breached ? 'var(--danger)' : 'var(--success)' }}>
+                                {obs.traffic_pct}% Traffic
+                              </span>
+                              <span style={{
+                                fontSize: '0.7rem',
+                                padding: '2px 8px',
+                                borderRadius: 4,
+                                background: obs.slo_breached ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+                                color: obs.slo_breached ? 'var(--danger)' : 'var(--success)',
+                              }}>
+                                {obs.slo_breached ? 'SLO BREACH' : 'HEALTHY'}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 20, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem' }}>
+                              <span style={{ color: 'var(--text-muted)' }}>
+                                p99: {obs.p99_ms !== null ? `${obs.p99_ms.toFixed(1)}ms` : '—'}
+                              </span>
+                              <span style={{ color: 'var(--text-muted)' }}>
+                                errors: {obs.err_pct !== null ? `${obs.err_pct.toFixed(2)}%` : '—'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Before Schema (for drop-column migrations) */}
           {record.table && record.plan?.drop_columns && record.plan.drop_columns.length > 0 && (

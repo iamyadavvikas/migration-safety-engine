@@ -310,3 +310,396 @@ func (s *Store) DeleteMany(ctx context.Context, ids []uuid.UUID) error {
 	}
 	return tx.Commit(ctx)
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// DDL Execution Logging
+// ──────────────────────────────────────────────────────────────────────────────
+
+// DDLExecutionLogEntry represents a logged DDL execution.
+type DDLExecutionLogEntry struct {
+	ID           int64      `json:"id"`
+	MigrationID  uuid.UUID  `json:"migration_id"`
+	Statement    string     `json:"statement"`
+	StartedAt    time.Time  `json:"started_at"`
+	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	DurationMs   *int       `json:"duration_ms,omitempty"`
+	Success      bool       `json:"success"`
+	ErrorMessage string     `json:"error_message,omitempty"`
+	LockWaitMs   int        `json:"lock_wait_ms"`
+}
+
+// LogDDLExecution records a DDL execution attempt.
+func (s *Store) LogDDLExecution(ctx context.Context, entry *DDLExecutionLogEntry) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO ddl_execution_log 
+		 (migration_id, statement, started_at, completed_at, duration_ms, success, error_message, lock_wait_ms)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		entry.MigrationID, entry.Statement, entry.StartedAt, entry.CompletedAt,
+		entry.DurationMs, entry.Success, entry.ErrorMessage, entry.LockWaitMs,
+	)
+	return err
+}
+
+// GetDDLLogs returns DDL execution logs for a migration.
+func (s *Store) GetDDLLogs(ctx context.Context, migrationID uuid.UUID) ([]DDLExecutionLogEntry, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, migration_id, statement, started_at, completed_at, duration_ms, success, error_message, lock_wait_ms
+		 FROM ddl_execution_log
+		 WHERE migration_id = $1
+		 ORDER BY started_at`,
+		migrationID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []DDLExecutionLogEntry
+	for rows.Next() {
+		var e DDLExecutionLogEntry
+		if err := rows.Scan(&e.ID, &e.MigrationID, &e.Statement, &e.StartedAt,
+			&e.CompletedAt, &e.DurationMs, &e.Success, &e.ErrorMessage, &e.LockWaitMs); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Backfill Progress Telemetry
+// ──────────────────────────────────────────────────────────────────────────────
+
+// BackfillProgressEntry represents a logged backfill batch.
+type BackfillProgressEntry struct {
+	ID            int64     `json:"id"`
+	MigrationID   uuid.UUID `json:"migration_id"`
+	BatchNumber   int       `json:"batch_number"`
+	RowsAffected  int       `json:"rows_affected"`
+	ThrottleMs    int       `json:"throttle_ms"`
+	DBCPUPct      float64   `json:"db_cpu_pct"`
+	DBRepLagMs    float64   `json:"db_rep_lag_ms"`
+	DBConnsPct    float64   `json:"db_conns_pct"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// LogBackfillProgress records a backfill batch execution.
+func (s *Store) LogBackfillProgress(ctx context.Context, entry *BackfillProgressEntry) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO backfill_progress 
+		 (migration_id, batch_number, rows_affected, throttle_ms, db_cpu_pct, db_rep_lag_ms, db_conns_pct)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		entry.MigrationID, entry.BatchNumber, entry.RowsAffected, entry.ThrottleMs,
+		entry.DBCPUPct, entry.DBRepLagMs, entry.DBConnsPct,
+	)
+	return err
+}
+
+// GetBackfillProgress returns backfill progress entries for a migration.
+func (s *Store) GetBackfillProgress(ctx context.Context, migrationID uuid.UUID) ([]BackfillProgressEntry, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, migration_id, batch_number, rows_affected, throttle_ms, 
+		        db_cpu_pct, db_rep_lag_ms, db_conns_pct, created_at
+		 FROM backfill_progress
+		 WHERE migration_id = $1
+		 ORDER BY batch_number`,
+		migrationID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []BackfillProgressEntry
+	for rows.Next() {
+		var e BackfillProgressEntry
+		if err := rows.Scan(&e.ID, &e.MigrationID, &e.BatchNumber, &e.RowsAffected,
+			&e.ThrottleMs, &e.DBCPUPct, &e.DBRepLagMs, &e.DBConnsPct, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Canary Observation Logging
+// ──────────────────────────────────────────────────────────────────────────────
+
+// CanaryObservationEntry represents a logged canary observation.
+type CanaryObservationEntry struct {
+	ID           int64     `json:"id"`
+	MigrationID  uuid.UUID `json:"migration_id"`
+	Step         int       `json:"step"`
+	TrafficPct   int       `json:"traffic_pct"`
+	P99Ms        float64   `json:"p99_ms"`
+	ErrPct       float64   `json:"err_pct"`
+	SLOBreached  bool      `json:"slo_breached"`
+	ObservedAt   time.Time `json:"observed_at"`
+}
+
+// LogCanaryObservation records a canary step observation.
+func (s *Store) LogCanaryObservation(ctx context.Context, entry *CanaryObservationEntry) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO canary_observation 
+		 (migration_id, step, traffic_pct, p99_ms, err_pct, slo_breached)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		entry.MigrationID, entry.Step, entry.TrafficPct, entry.P99Ms, entry.ErrPct, entry.SLOBreached,
+	)
+	return err
+}
+
+// GetCanaryObservations returns canary observations for a migration.
+func (s *Store) GetCanaryObservations(ctx context.Context, migrationID uuid.UUID) ([]CanaryObservationEntry, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, migration_id, step, traffic_pct, p99_ms, err_pct, slo_breached, observed_at
+		 FROM canary_observation
+		 WHERE migration_id = $1
+		 ORDER BY step, observed_at`,
+		migrationID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []CanaryObservationEntry
+	for rows.Next() {
+		var e CanaryObservationEntry
+		if err := rows.Scan(&e.ID, &e.MigrationID, &e.Step, &e.TrafficPct,
+			&e.P99Ms, &e.ErrPct, &e.SLOBreached, &e.ObservedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Service Registry (Multi-Service Coordination)
+// ──────────────────────────────────────────────────────────────────────────────
+
+// ServiceRegistration represents a registered service.
+type ServiceRegistration struct {
+	ID             uuid.UUID `json:"id"`
+	MigrationID    uuid.UUID `json:"migration_id"`
+	ServiceName    string    `json:"service_name"`
+	SchemaVersion  int       `json:"schema_version"`
+	Compatible     bool      `json:"compatible"`
+	RegisteredAt   time.Time `json:"registered_at"`
+	LastHeartbeat  time.Time `json:"last_heartbeat"`
+}
+
+// RegisterService registers a service as dependent on a migration.
+func (s *Store) RegisterService(ctx context.Context, migrationID uuid.UUID, serviceName string, schemaVersion int) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := s.pool.QueryRow(ctx,
+		`INSERT INTO service_registry (migration_id, service_name, schema_version)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (migration_id, service_name) 
+		 DO UPDATE SET schema_version = $3, last_heartbeat = now()
+		 RETURNING id`,
+		migrationID, serviceName, schemaVersion,
+	).Scan(&id)
+	return id, err
+}
+
+// UpdateServiceCompat updates a service's compatibility status.
+func (s *Store) UpdateServiceCompat(ctx context.Context, migrationID uuid.UUID, serviceName string, compatible bool) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE service_registry 
+		 SET compatible = $3, last_heartbeat = now()
+		 WHERE migration_id = $1 AND service_name = $2`,
+		migrationID, serviceName, compatible,
+	)
+	return err
+}
+
+// HeartbeatService updates a service's heartbeat timestamp.
+func (s *Store) HeartbeatService(ctx context.Context, migrationID uuid.UUID, serviceName string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE service_registry 
+		 SET last_heartbeat = now()
+		 WHERE migration_id = $1 AND service_name = $2`,
+		migrationID, serviceName,
+	)
+	return err
+}
+
+// GetServices returns all services registered for a migration.
+func (s *Store) GetServices(ctx context.Context, migrationID uuid.UUID) ([]ServiceRegistration, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, migration_id, service_name, schema_version, compatible, registered_at, last_heartbeat
+		 FROM service_registry
+		 WHERE migration_id = $1
+		 ORDER BY registered_at`,
+		migrationID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var services []ServiceRegistration
+	for rows.Next() {
+		var svc ServiceRegistration
+		if err := rows.Scan(&svc.ID, &svc.MigrationID, &svc.ServiceName, &svc.SchemaVersion,
+			&svc.Compatible, &svc.RegisteredAt, &svc.LastHeartbeat); err != nil {
+			return nil, err
+		}
+		services = append(services, svc)
+	}
+	return services, rows.Err()
+}
+
+// AllServicesReady checks if all registered services are compatible.
+func (s *Store) AllServicesReady(ctx context.Context, migrationID uuid.UUID) (bool, int, error) {
+	var total, ready int
+	err := s.pool.QueryRow(ctx,
+		`SELECT count(*), count(*) FILTER (WHERE compatible = true)
+		 FROM service_registry
+		 WHERE migration_id = $1`,
+		migrationID,
+	).Scan(&total, &ready)
+	if err != nil {
+		return false, 0, err
+	}
+	return total == ready && total > 0, total - ready, nil
+}
+
+// RemoveService removes a service registration.
+func (s *Store) RemoveService(ctx context.Context, migrationID uuid.UUID, serviceName string) error {
+	_, err := s.pool.Exec(ctx,
+		`DELETE FROM service_registry WHERE migration_id = $1 AND service_name = $2`,
+		migrationID, serviceName,
+	)
+	return err
+}
+
+// ServiceHeartbeat represents a service heartbeat event.
+type ServiceHeartbeat struct {
+	ID          int64     `json:"id"`
+	MigrationID uuid.UUID `json:"migration_id"`
+	ServiceName string    `json:"service_name"`
+	Payload     []byte    `json:"payload,omitempty"`
+	RecordedAt  time.Time `json:"recorded_at"`
+}
+
+// RecordHeartbeat records a service heartbeat.
+func (s *Store) RecordHeartbeat(ctx context.Context, migrationID uuid.UUID, serviceName string, payload []byte) error {
+	// Update the service registry's last_heartbeat timestamp
+	_, err := s.pool.Exec(ctx,
+		`UPDATE service_registry 
+		 SET last_heartbeat = now(), compatible = true
+		 WHERE migration_id = $1 AND service_name = $2`,
+		migrationID, serviceName,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Record the heartbeat event
+	_, err = s.pool.Exec(ctx,
+		`INSERT INTO service_heartbeat (migration_id, service_name, payload)
+		 VALUES ($1, $2, $3)`,
+		migrationID, serviceName, payload,
+	)
+	return err
+}
+
+// GetHeartbeats returns heartbeats for a migration.
+func (s *Store) GetHeartbeats(ctx context.Context, migrationID uuid.UUID) ([]ServiceHeartbeat, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, migration_id, service_name, payload, recorded_at
+		 FROM service_heartbeat
+		 WHERE migration_id = $1
+		 ORDER BY recorded_at DESC
+		 LIMIT 100`,
+		migrationID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var heartbeats []ServiceHeartbeat
+	for rows.Next() {
+		var hb ServiceHeartbeat
+		if err := rows.Scan(&hb.ID, &hb.MigrationID, &hb.ServiceName, &hb.Payload, &hb.RecordedAt); err != nil {
+			return nil, err
+		}
+		heartbeats = append(heartbeats, hb)
+	}
+	return heartbeats, rows.Err()
+}
+
+// CheckServiceLiveness checks if all services are still alive (heartbeat within threshold).
+func (s *Store) CheckServiceLiveness(ctx context.Context, migrationID uuid.UUID, threshold time.Duration) (bool, []string, error) {
+	var deadServices []string
+	
+	rows, err := s.pool.Query(ctx,
+		`SELECT service_name, last_heartbeat
+		 FROM service_registry
+		 WHERE migration_id = $1`,
+		migrationID,
+	)
+	if err != nil {
+		return false, nil, err
+	}
+	defer rows.Close()
+
+	now := time.Now()
+	for rows.Next() {
+		var serviceName string
+		var lastHeartbeat time.Time
+		if err := rows.Scan(&serviceName, &lastHeartbeat); err != nil {
+			return false, nil, err
+		}
+		
+		if now.Sub(lastHeartbeat) > threshold {
+			deadServices = append(deadServices, serviceName)
+		}
+	}
+	
+	if err := rows.Err(); err != nil {
+		return false, nil, err
+	}
+
+	return len(deadServices) == 0, deadServices, nil
+}
+
+// MarkServiceIncompatible marks a service as incompatible (for contract phase).
+func (s *Store) MarkServiceIncompatible(ctx context.Context, migrationID uuid.UUID, serviceName string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE service_registry 
+		 SET compatible = false
+		 WHERE migration_id = $1 AND service_name = $2`,
+		migrationID, serviceName,
+	)
+	return err
+}
+
+// GetServiceVersions returns all services with their schema versions.
+func (s *Store) GetServiceVersions(ctx context.Context, migrationID uuid.UUID) (map[string]int, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT service_name, schema_version
+		 FROM service_registry
+		 WHERE migration_id = $1`,
+		migrationID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	versions := make(map[string]int)
+	for rows.Next() {
+		var name string
+		var version int
+		if err := rows.Scan(&name, &version); err != nil {
+			return nil, err
+		}
+		versions[name] = version
+	}
+	return versions, rows.Err()
+}

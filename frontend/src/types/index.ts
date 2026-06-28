@@ -131,3 +131,54 @@ export const STATE_LABELS: Record<State, string> = {
   RollingBack: 'Rolling Back',
   RolledBack: 'Rolled Back',
 }
+
+export interface DDLExecutionLog {
+  id: number
+  migration_id: string
+  statement: string
+  started_at: string
+  completed_at: string | null
+  duration_ms: number | null
+  success: boolean
+  error_message: string | null
+  lock_wait_ms: number | null
+  created_at: string
+}
+
+export interface BackfillProgress {
+  id: number
+  migration_id: string
+  batch_number: number
+  rows_affected: number
+  throttle_ms: number | null
+  db_cpu_pct: number | null
+  db_rep_lag_ms: number | null
+  db_conns_pct: number | null
+  created_at: string
+}
+
+export interface CanaryObservation {
+  id: number
+  migration_id: string
+  step: number
+  traffic_pct: number
+  p99_ms: number | null
+  err_pct: number | null
+  slo_breached: boolean
+  observed_at: string
+}
+
+export interface SafetyMetrics {
+  migration_id: string
+  ddl_logs: DDLExecutionLog[]
+}
+
+export interface BackfillProgressResponse {
+  migration_id: string
+  progress: BackfillProgress[]
+}
+
+export interface CanaryObservationsResponse {
+  migration_id: string
+  observations: CanaryObservation[]
+}

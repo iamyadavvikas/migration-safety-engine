@@ -15,9 +15,10 @@ up: ## Start postgres + prometheus + grafana
 down: ## Stop and remove the stack
 	docker compose down
 
-migrate: ## Apply the engine state schema + the demo target table
+migrate: ## Apply the engine state schema + the demo target table + safety tables
 	docker compose exec -T postgres psql -U mse -d mse < migrations/0001_state.sql
 	docker compose exec -T postgres psql -U mse -d mse < migrations/0002_demo_target.sql
+	docker compose exec -T postgres psql -U mse -d mse < migrations/0003_safety_tables.sql
 	@echo "schema applied"
 
 run: ## Run the engine (control API + state-machine runner)
