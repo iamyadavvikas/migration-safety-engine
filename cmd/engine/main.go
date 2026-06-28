@@ -68,6 +68,7 @@ func main() {
 	mux.HandleFunc("POST /reset-demo", srv.resetDemo)
 	mux.HandleFunc("POST /migrations/{id}/abort", srv.abortMigration)
 	mux.HandleFunc("DELETE /migrations", srv.deleteMigrations)
+	mux.HandleFunc("GET /schema/{table}", srv.getSchema)
 
 	distFS, err := fs.Sub(frontend.Assets, "dist")
 	if err != nil {
@@ -291,6 +292,54 @@ func (s *server) deleteMigrations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// schemaColumn is a column returned by the schema introspection endpoint.
+type schemaColumn struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Nullable bool   `json:"nullable"`
+	Default  string `json:"default,omitempty"`
+}
+
+// getSchema returns the current column structure of a table in the target database.
+func (s *server) getSchema(w http.ResponseWriter, r *http.Request) {
+	table := r.PathValue("table")
+	if table == "" {
+		http.Error(w, "table parameter required", http.StatusBadRequest)
+		return
+	}
+
+	rows, err := s.store.Target().Query(r.Context(),
+		"SELECT column_name, data_type, is_nullable, COALESCE(column_default, '') "+
+			"FROM information_schema.columns WHERE table_name = $1 ORDER BY ordinal_position", table)
+	if err != nil {
+		http.Error(w, "introspect: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var columns []schemaColumn
+	for rows.Next() {
+		var col schemaColumn
+		var nullable string
+		if err := rows.Scan(&col.Name, &col.Type, &nullable, &col.Default); err != nil {
+			http.Error(w, "scan: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		col.Nullable = nullable == "YES"
+		columns = append(columns, col)
+	}
+	if err := rows.Err(); err != nil {
+		http.Error(w, "rows: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"table":   table,
+		"columns": columns,
+	})
 }
 
 // drive runs a migration to completion in the background.

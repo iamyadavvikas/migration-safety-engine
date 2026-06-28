@@ -60,6 +60,28 @@ export interface MigrationPlan {
   contract: string[]
   rollback: string[]
   on_failure: string
+  add_columns?: ColumnSpec[]
+  drop_columns?: string[]
+}
+
+export interface ColumnSpec {
+  name: string
+  type: string
+  expression?: string
+  nullable?: boolean
+  indexed?: boolean
+}
+
+export interface SchemaColumn {
+  name: string
+  type: string
+  nullable: boolean
+  default?: string
+}
+
+export interface SchemaResponse {
+  table: string
+  columns: SchemaColumn[]
 }
 
 export interface DriftReport {

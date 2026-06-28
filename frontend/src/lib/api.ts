@@ -1,4 +1,4 @@
-import type { MigrationRecord, MigrationPlan, DriftReport, PlanSubmission } from '../types'
+import type { MigrationRecord, MigrationPlan, DriftReport, PlanSubmission, SchemaResponse } from '../types'
 
 class ApiClient {
   private base = ''
@@ -69,6 +69,15 @@ class ApiClient {
       const text = await res.text()
       throw new Error(`delete migrations: ${res.status} ${text}`)
     }
+  }
+
+  async fetchSchema(table: string): Promise<SchemaResponse> {
+    const res = await fetch(`${this.base}/schema/${encodeURIComponent(table)}`)
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`fetch schema: ${res.status} ${text}`)
+    }
+    return res.json()
   }
 }
 

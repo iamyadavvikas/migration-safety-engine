@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 
+	"github.com/iamyadavvikas/migration-safety-engine/internal/ddl"
 	"gopkg.in/yaml.v3"
 )
 
@@ -34,6 +35,15 @@ const (
 	OnFailurePause    FailureAction = "pause"
 )
 
+// ColumnSpec describes a column to add via the declarative API.
+type ColumnSpec struct {
+	Name       string `yaml:"name" json:"name"`
+	Type       string `yaml:"type" json:"type"`
+	Expression string `yaml:"expression,omitempty" json:"expression,omitempty"` // backfill source_expr
+	Nullable   bool   `yaml:"nullable,omitempty" json:"nullable,omitempty"`
+	Indexed    bool   `yaml:"indexed,omitempty" json:"indexed,omitempty"`
+}
+
 // MigrationPlan is the declarative description of a schema migration.
 type MigrationPlan struct {
 	ID        string        `yaml:"id" json:"id"`
@@ -49,6 +59,10 @@ type MigrationPlan struct {
 	Rollback  []string      `yaml:"rollback" json:"rollback"` // DDL to undo expand if canary fails before cutover
 	OnFailure FailureAction `yaml:"on_failure" json:"on_failure"`
 	Chaos     Chaos         `yaml:"chaos" json:"chaos"`
+
+	// Declarative column specs — when present, DDL is auto-generated.
+	AddColumns  []ColumnSpec `yaml:"add_columns,omitempty" json:"add_columns,omitempty"`
+	DropColumns []string     `yaml:"drop_columns,omitempty" json:"drop_columns,omitempty"`
 }
 
 // Chaos holds fault-injection knobs used to exercise the SLO gate + auto-rollback
@@ -117,6 +131,14 @@ func (p *MigrationPlan) Validate() error {
 	if !identRe.MatchString(p.Table) {
 		return fmt.Errorf("plan.table %q is not a valid SQL identifier", p.Table)
 	}
+
+	// Declarative mode: auto-generate DDL from add_columns/drop_columns.
+	if len(p.AddColumns) > 0 || len(p.DropColumns) > 0 {
+		if err := p.generateDDL(); err != nil {
+			return fmt.Errorf("generate ddl: %w", err)
+		}
+	}
+
 	if p.Backfill.Column != "" && !identRe.MatchString(p.Backfill.Column) {
 		return fmt.Errorf("backfill.column %q is not a valid SQL identifier", p.Backfill.Column)
 	}
@@ -149,5 +171,50 @@ func (p *MigrationPlan) Validate() error {
 	if p.Verify.ParityThreshold == 0 {
 		p.Verify.ParityThreshold = 0.999
 	}
+	return nil
+}
+
+// generateDDL uses the ddl package to auto-populate expand/contract/rollback/backfill
+// from the declarative AddColumns and DropColumns fields.
+func (p *MigrationPlan) generateDDL() error {
+	// Convert plan.ColumnSpec to ddl.ColumnSpec
+	cols := make([]ddl.ColumnSpec, len(p.AddColumns))
+	for i, c := range p.AddColumns {
+		cols[i] = ddl.ColumnSpec{
+			Name:       c.Name,
+			Type:       c.Type,
+			Expression: c.Expression,
+			Nullable:   c.Nullable,
+			Indexed:    c.Indexed,
+		}
+	}
+
+	out := ddl.Generate(p.Table, cols, p.DropColumns)
+
+	// Only populate fields that are empty (don't override explicit raw SQL).
+	if len(p.Expand) == 0 {
+		p.Expand = out.Expand
+	}
+	if len(p.Contract) == 0 {
+		p.Contract = out.Contract
+	}
+	if len(p.Rollback) == 0 {
+		p.Rollback = out.Rollback
+	}
+	if p.Backfill.Column == "" && out.BackfillColumn != "" {
+		p.Backfill.Column = out.BackfillColumn
+	}
+	if p.Backfill.SourceExpr == "" && out.BackfillExpr != "" {
+		p.Backfill.SourceExpr = out.BackfillExpr
+	}
+
+	// Set defaults for backfill if columns were specified.
+	if p.Backfill.BatchSize == 0 {
+		p.Backfill.BatchSize = 5000
+	}
+	if p.Backfill.ThrottleMs == 0 {
+		p.Backfill.ThrottleMs = 20
+	}
+
 	return nil
 }
