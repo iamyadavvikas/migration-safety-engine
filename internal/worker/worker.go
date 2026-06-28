@@ -18,7 +18,7 @@ type MigrationRunner interface {
 type Pool struct {
 	runner  MigrationRunner
 	log     *slog.Logger
-Workers int
+	Workers int
 	jobs    chan uuid.UUID
 	wg      sync.WaitGroup
 	cancel  context.CancelFunc

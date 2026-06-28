@@ -15,18 +15,18 @@ import (
 
 // DDLConfig holds safety configuration for DDL execution.
 type DDLConfig struct {
-	LockTimeout      time.Duration // Max time to wait for locks (default: 3s)
-	StatementTimeout time.Duration // Max time for DDL statement (default: 60s)
-	MaxLockQueue     int           // Max waiting queries before pausing (default: 5)
+	LockTimeout       time.Duration // Max time to wait for locks (default: 3s)
+	StatementTimeout  time.Duration // Max time for DDL statement (default: 60s)
+	MaxLockQueue      int           // Max waiting queries before pausing (default: 5)
 	MaxReplicationLag time.Duration // Max acceptable replication lag (default: 30s)
 }
 
 // DefaultDDLConfig returns production-safe defaults.
 func DefaultDDLConfig() DDLConfig {
 	return DDLConfig{
-		LockTimeout:      3 * time.Second,
-		StatementTimeout: 60 * time.Second,
-		MaxLockQueue:     5,
+		LockTimeout:       3 * time.Second,
+		StatementTimeout:  60 * time.Second,
+		MaxLockQueue:      5,
 		MaxReplicationLag: 30 * time.Second,
 	}
 }
@@ -56,20 +56,20 @@ type LockQueueStatus struct {
 
 // ReplicationStatus represents replication health.
 type ReplicationStatus struct {
-	ReplicaCount   int
-	MaxLagMs       float64
-	WorstReplica   string
+	ReplicaCount int
+	MaxLagMs     float64
+	WorstReplica string
 }
 
 // DBHealthMetrics represents overall database health.
 type DBHealthMetrics struct {
-	CPUPercent       float64
-	ActiveConns      int
-	MaxConns         int
-	TuplesDead       int64
-	TuplesDirty      int64
-	LockQueue        LockQueueStatus
-	Replication      ReplicationStatus
+	CPUPercent  float64
+	ActiveConns int
+	MaxConns    int
+	TuplesDead  int64
+	TuplesDirty int64
+	LockQueue   LockQueueStatus
+	Replication ReplicationStatus
 }
 
 // CheckLockQueue queries pg_stat_activity for lock contention.
@@ -175,7 +175,7 @@ func (e *DDLExecutor) SafetyCheck(ctx context.Context) error {
 		return fmt.Errorf("lock queue check failed: %w", err)
 	}
 	if lockStatus.WaitingQueries > e.config.MaxLockQueue {
-		return fmt.Errorf("lock queue blocked: %d queries waiting (max: %d)", 
+		return fmt.Errorf("lock queue blocked: %d queries waiting (max: %d)",
 			lockStatus.WaitingQueries, e.config.MaxLockQueue)
 	}
 
@@ -185,7 +185,7 @@ func (e *DDLExecutor) SafetyCheck(ctx context.Context) error {
 		return fmt.Errorf("replication check failed: %w", err)
 	}
 	if time.Duration(replStatus.MaxLagMs)*time.Millisecond > e.config.MaxReplicationLag {
-		return fmt.Errorf("replication lag too high: %.0fms (max: %v)", 
+		return fmt.Errorf("replication lag too high: %.0fms (max: %v)",
 			replStatus.MaxLagMs, e.config.MaxReplicationLag)
 	}
 
@@ -238,7 +238,7 @@ func (e *DDLExecutor) ExecDDL(ctx context.Context, stmt string) (time.Duration, 
 	}
 
 	duration := time.Since(start)
-	e.log.Info("DDL executed successfully", 
+	e.log.Info("DDL executed successfully",
 		"stmt", stmt[:min(len(stmt), 100)],
 		"duration", duration)
 
@@ -262,7 +262,7 @@ func (e *DDLExecutor) execConcurrently(ctx context.Context, stmt string) (time.D
 		// Pre-flight safety check
 		if err := e.SafetyCheck(ctx); err != nil {
 			if attempt < maxRetries-1 {
-				e.log.Warn("safety check failed, retrying", 
+				e.log.Warn("safety check failed, retrying",
 					"attempt", attempt+1, "err", err)
 				time.Sleep(retryDelay * time.Duration(attempt+1))
 				continue

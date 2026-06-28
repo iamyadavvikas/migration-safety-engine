@@ -282,4 +282,3 @@ func TestCutoverAbortsOnDrift(t *testing.T) {
 		t.Fatalf("cutover gate failed to protect contract: legacy_shipping was dropped")
 	}
 }
-

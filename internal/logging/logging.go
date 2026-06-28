@@ -13,10 +13,10 @@ import (
 
 // Config holds logging configuration.
 type Config struct {
-	Level      string `json:"level"`      // debug, info, warn, error
-	Format     string `json:"format"`     // json, text
-	Output     string `json:"output"`     // stdout, stderr, or file path
-	AddSource  bool   `json:"add_source"` // Add source file/line
+	Level     string `json:"level"`      // debug, info, warn, error
+	Format    string `json:"format"`     // json, text
+	Output    string `json:"output"`     // stdout, stderr, or file path
+	AddSource bool   `json:"add_source"` // Add source file/line
 }
 
 // DefaultConfig returns production defaults.
@@ -239,16 +239,16 @@ func truncate(s string, maxLen int) string {
 
 // AuditEntry represents an audit log entry for API mutations.
 type AuditEntry struct {
-	Timestamp time.Time `json:"timestamp"`
-	User      string    `json:"user"`
-	Role      string    `json:"role"`
-	Action    string    `json:"action"`
-	Resource  string    `json:"resource"`
-	ResourceID string  `json:"resource_id,omitempty"`
-	Details   any       `json:"details,omitempty"`
-	Success   bool      `json:"success"`
-	Error     string    `json:"error,omitempty"`
-	IPAddress string    `json:"ip_address,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
+	User       string    `json:"user"`
+	Role       string    `json:"role"`
+	Action     string    `json:"action"`
+	Resource   string    `json:"resource"`
+	ResourceID string    `json:"resource_id,omitempty"`
+	Details    any       `json:"details,omitempty"`
+	Success    bool      `json:"success"`
+	Error      string    `json:"error,omitempty"`
+	IPAddress  string    `json:"ip_address,omitempty"`
 }
 
 // AuditLogger logs API mutations for compliance.

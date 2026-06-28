@@ -79,7 +79,7 @@ type Runner struct {
 	handlers map[State]Handler
 
 	// Safety layers
-	ddlExecutor     *safety.DDLExecutor
+	ddlExecutor      *safety.DDLExecutor
 	adaptiveThrottle *safety.AdaptiveThrottle
 
 	// stepDelay paces transitions so progress is observable in demos/tests.
@@ -96,12 +96,12 @@ func NewRunner(st *store.Store, target *pgxpool.Pool, log *slog.Logger) *Runner 
 	adaptiveThrottle := safety.NewAdaptiveThrottle(backfillConfig, ddlExecutor, log)
 
 	r := &Runner{
-		store:           st,
-		target:          target,
-		log:             log,
-		ddlExecutor:     ddlExecutor,
+		store:            st,
+		target:           target,
+		log:              log,
+		ddlExecutor:      ddlExecutor,
 		adaptiveThrottle: adaptiveThrottle,
-		stepDelay:       200 * time.Millisecond,
+		stepDelay:        200 * time.Millisecond,
 	}
 	r.handlers = r.defaultHandlers()
 	return r
@@ -275,13 +275,13 @@ func (r *Runner) expand(ctx context.Context, rec *store.Record) (Result, error) 
 
 		// Log DDL execution
 		logEntry := &store.DDLExecutionLogEntry{
-			MigrationID:  rec.ID,
-			Statement:    stmt,
-			StartedAt:    start,
-			CompletedAt:  ptrTime(time.Now()),
-			DurationMs:   ptrInt(int(duration.Milliseconds())),
-			Success:      err == nil,
-			LockWaitMs:   0, // Would need to extract from error
+			MigrationID: rec.ID,
+			Statement:   stmt,
+			StartedAt:   start,
+			CompletedAt: ptrTime(time.Now()),
+			DurationMs:  ptrInt(int(duration.Milliseconds())),
+			Success:     err == nil,
+			LockWaitMs:  0, // Would need to extract from error
 		}
 		if err != nil {
 			logEntry.ErrorMessage = err.Error()
@@ -412,7 +412,7 @@ func (r *Runner) backfill(ctx context.Context, rec *store.Record) (Result, error
 		var newLastID int64
 		err = r.target.QueryRow(ctx, fmt.Sprintf(`
 			SELECT COALESCE(MAX(id), 0) FROM %s 
-			WHERE %s IS NOT NULL AND id > $1`, 
+			WHERE %s IS NOT NULL AND id > $1`,
 			p.Table, col), lastID).Scan(&newLastID)
 		if err != nil {
 			return Result{}, fmt.Errorf("get last id: %w", err)
@@ -420,7 +420,7 @@ func (r *Runner) backfill(ctx context.Context, rec *store.Record) (Result, error
 
 		// Ensure forward progress
 		if newLastID <= lastID {
-			r.log.Warn("no forward progress, breaking", 
+			r.log.Warn("no forward progress, breaking",
 				"last_id", lastID, "new_last_id", newLastID)
 			break
 		}
@@ -453,7 +453,7 @@ func (r *Runner) backfill(ctx context.Context, rec *store.Record) (Result, error
 				"rows_done": done,
 				"batch_num": batchNum,
 			},
-			fmt.Sprintf("backfilled %d/%d rows (batch %d, last_id=%d, %dms throttle)", 
+			fmt.Sprintf("backfilled %d/%d rows (batch %d, last_id=%d, %dms throttle)",
 				done, total, batchNum, lastID, r.adaptiveThrottle.GetThrottleMs())); err != nil {
 			return Result{}, fmt.Errorf("checkpoint: %w", err)
 		}
@@ -534,7 +534,7 @@ func (r *Runner) verify(ctx context.Context, rec *store.Record) (Result, error) 
 // (on_failure=pause).
 func (r *Runner) canary(ctx context.Context, rec *store.Record) (Result, error) {
 	p := rec.Plan
-	
+
 	// Hard gate: check replication lag before starting canary
 	replStatus, err := r.ddlExecutor.CheckReplicationLag(ctx)
 	if err != nil {
@@ -543,7 +543,7 @@ func (r *Runner) canary(ctx context.Context, rec *store.Record) (Result, error) 
 		return Result{}, fmt.Errorf("replication lag too high before canary: %.0fms (max: %dms)",
 			replStatus.MaxLagMs, p.SLO.MaxP99LatencyMs)
 	}
-	
+
 	for _, step := range p.Canary.Steps {
 		select {
 		case <-ctx.Done():
@@ -554,13 +554,13 @@ func (r *Runner) canary(ctx context.Context, rec *store.Record) (Result, error) 
 		// Pre-flight: check replication lag before each canary step
 		replStatus, err := r.ddlExecutor.CheckReplicationLag(ctx)
 		if err != nil {
-			r.log.Warn("failed to check replication lag, proceeding with caution", 
+			r.log.Warn("failed to check replication lag, proceeding with caution",
 				"migration", rec.ID, "step", step, "err", err)
 		} else if replStatus.MaxLagMs > float64(p.SLO.MaxP99LatencyMs)*2 {
 			// Replication lag is 2x the p99 threshold — pause and wait
 			r.log.Warn("replication lag too high, waiting",
 				"migration", rec.ID, "step", step,
-				"lag_ms", replStatus.MaxLagMs, 
+				"lag_ms", replStatus.MaxLagMs,
 				"threshold_ms", p.SLO.MaxP99LatencyMs*2)
 			time.Sleep(5 * time.Second)
 			// Re-check after waiting
@@ -679,10 +679,10 @@ func (r *Runner) rollback(ctx context.Context, rec *store.Record) (Result, error
 	// Step 2: Execute rollback DDL with retries
 	maxRetries := 3
 	retryDelay := time.Second
-	
+
 	for i, stmt := range rec.Plan.Rollback {
 		var lastErr error
-		
+
 		for attempt := 0; attempt < maxRetries; attempt++ {
 			// Execute with safety wrapper
 			start := time.Now()
@@ -691,12 +691,12 @@ func (r *Runner) rollback(ctx context.Context, rec *store.Record) (Result, error
 
 			// Log DDL execution
 			logEntry := &store.DDLExecutionLogEntry{
-				MigrationID:  rec.ID,
-				Statement:    stmt,
-				StartedAt:    start,
-				CompletedAt:  ptrTime(time.Now()),
-				DurationMs:   ptrInt(int(duration.Milliseconds())),
-				Success:      err == nil,
+				MigrationID: rec.ID,
+				Statement:   stmt,
+				StartedAt:   start,
+				CompletedAt: ptrTime(time.Now()),
+				DurationMs:  ptrInt(int(duration.Milliseconds())),
+				Success:     err == nil,
 			}
 			if err != nil {
 				logEntry.ErrorMessage = err.Error()
@@ -723,16 +723,16 @@ func (r *Runner) rollback(ctx context.Context, rec *store.Record) (Result, error
 				time.Sleep(delay)
 			}
 		}
-		
+
 		if lastErr != nil {
-			return Result{}, fmt.Errorf("rollback stmt %d (%q) failed after %d attempts: %w", 
+			return Result{}, fmt.Errorf("rollback stmt %d (%q) failed after %d attempts: %w",
 				i, stmt, maxRetries, lastErr)
 		}
 	}
-	
+
 	// Step 3: Verify rollback completed
 	r.verifyRollback(ctx, rec)
-	
+
 	return Result{Checkpoint: map[string]any{"rolled_back": len(rec.Plan.Rollback)}}, nil
 }
 
@@ -766,7 +766,7 @@ func (r *Runner) verifyRollback(ctx context.Context, rec *store.Record) {
 			continue
 		}
 		if exists {
-			r.log.Error("column still exists after rollback", 
+			r.log.Error("column still exists after rollback",
 				"migration", rec.ID, "column", col)
 		}
 	}
@@ -782,12 +782,12 @@ func (r *Runner) contract(ctx context.Context, rec *store.Record) (Result, error
 
 		// Log DDL execution
 		logEntry := &store.DDLExecutionLogEntry{
-			MigrationID:  rec.ID,
-			Statement:    stmt,
-			StartedAt:    start,
-			CompletedAt:  ptrTime(time.Now()),
-			DurationMs:   ptrInt(int(duration.Milliseconds())),
-			Success:      err == nil,
+			MigrationID: rec.ID,
+			Statement:   stmt,
+			StartedAt:   start,
+			CompletedAt: ptrTime(time.Now()),
+			DurationMs:  ptrInt(int(duration.Milliseconds())),
+			Success:     err == nil,
 		}
 		if err != nil {
 			logEntry.ErrorMessage = err.Error()

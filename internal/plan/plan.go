@@ -75,10 +75,10 @@ type Chaos struct {
 
 // Backfill controls how existing rows are populated for the new schema.
 type Backfill struct {
-	Column     string `yaml:"column" json:"column"`         // target column to populate (e.g. shipping_class)
+	Column     string `yaml:"column" json:"column"` // target column to populate (e.g. shipping_class)
 	BatchSize  int    `yaml:"batch_size" json:"batch_size"`
 	ThrottleMs int    `yaml:"throttle_ms" json:"throttle_ms"`
-	SourceExpr string `yaml:"source_expr" json:"source_expr"` // raw SQL expression computed per row
+	SourceExpr string `yaml:"source_expr" json:"source_expr"`                 // raw SQL expression computed per row
 	MultiSQL   string `yaml:"multi_sql,omitempty" json:"multi_sql,omitempty"` // composite UPDATE for multiple columns
 }
 

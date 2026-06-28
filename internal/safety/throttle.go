@@ -9,36 +9,36 @@ import (
 
 // BackfillConfig holds configuration for adaptive backfill throttling.
 type BackfillConfig struct {
-	InitialBatchSize  int           // Starting batch size (default: 5000)
-	MinBatchSize      int           // Minimum batch size (default: 100)
-	MaxBatchSize      int           // Maximum batch size (default: 50000)
-	InitialThrottleMs int           // Starting throttle in ms (default: 20)
-	MinThrottleMs     int           // Minimum throttle (default: 0)
-	MaxThrottleMs     int           // Maximum throttle (default: 5000)
-	HealthCheckInterval time.Duration // How often to check DB health (default: 5s)
-	CircuitBreakerThreshold float64   // Health score to trip breaker (default: 0.1)
+	InitialBatchSize        int           // Starting batch size (default: 5000)
+	MinBatchSize            int           // Minimum batch size (default: 100)
+	MaxBatchSize            int           // Maximum batch size (default: 50000)
+	InitialThrottleMs       int           // Starting throttle in ms (default: 20)
+	MinThrottleMs           int           // Minimum throttle (default: 0)
+	MaxThrottleMs           int           // Maximum throttle (default: 5000)
+	HealthCheckInterval     time.Duration // How often to check DB health (default: 5s)
+	CircuitBreakerThreshold float64       // Health score to trip breaker (default: 0.1)
 }
 
 // DefaultBackfillConfig returns production-safe defaults.
 func DefaultBackfillConfig() BackfillConfig {
 	return BackfillConfig{
-		InitialBatchSize:  5000,
-		MinBatchSize:      100,
-		MaxBatchSize:      50000,
-		InitialThrottleMs: 20,
-		MinThrottleMs:     0,
-		MaxThrottleMs:     5000,
-		HealthCheckInterval: 5 * time.Second,
+		InitialBatchSize:        5000,
+		MinBatchSize:            100,
+		MaxBatchSize:            50000,
+		InitialThrottleMs:       20,
+		MinThrottleMs:           0,
+		MaxThrottleMs:           5000,
+		HealthCheckInterval:     5 * time.Second,
 		CircuitBreakerThreshold: 0.1,
 	}
 }
 
 // AdaptiveThrottle controls backfill pacing based on DB health.
 type AdaptiveThrottle struct {
-	config      BackfillConfig
-	executor    *DDLExecutor
-	log         *slog.Logger
-	
+	config   BackfillConfig
+	executor *DDLExecutor
+	log      *slog.Logger
+
 	// Current state
 	currentBatchSize  int
 	currentThrottleMs int
@@ -47,10 +47,10 @@ type AdaptiveThrottle struct {
 	tripCount         int
 	consecutiveGood   int
 	consecutiveBad    int
-	
+
 	// Recovery thresholds
 	recoveryThreshold float64 // Health score to untrip (default: 0.3)
-	
+
 	// Metrics history
 	metricsHistory []DBHealthMetrics
 }
@@ -150,7 +150,7 @@ func (at *AdaptiveThrottle) AdjustThrottle() {
 			at.circuitTripped = true
 			at.tripCount++
 			at.consecutiveBad = 0
-			at.log.Error("CIRCUIT BREAKER TRIPPED", 
+			at.log.Error("CIRCUIT BREAKER TRIPPED",
 				"health_score", at.healthScore,
 				"threshold", at.config.CircuitBreakerThreshold,
 				"trip_count", at.tripCount)
@@ -192,7 +192,7 @@ func (at *AdaptiveThrottle) UpdateHealth(ctx context.Context) error {
 
 	at.healthScore = at.HealthScore(metrics)
 	at.metricsHistory = append(at.metricsHistory, *metrics)
-	
+
 	// Keep only last 100 samples
 	if len(at.metricsHistory) > 100 {
 		at.metricsHistory = at.metricsHistory[1:]

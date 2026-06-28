@@ -31,8 +31,8 @@ type Limiter struct {
 }
 
 type client struct {
-	tokens    float64
-	lastSeen  time.Time
+	tokens   float64
+	lastSeen time.Time
 }
 
 // NewLimiter creates a new rate limiter.

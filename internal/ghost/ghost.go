@@ -21,53 +21,53 @@ type Config struct {
 	Database string
 
 	// gh-ost settings
-	ChunkSize              int
-	MaxLagMillisecond      int
-	ThrottleAdditionalHTTP string
-	AllowOnBefore          bool
+	ChunkSize               int
+	MaxLagMillisecond       int
+	ThrottleAdditionalHTTP  string
+	AllowOnBefore           bool
 	InitiallyDropGhostTable bool
-	InitiallyDropOldTable  bool
-	CriticalLoad           string
-	MaxLoad                string
-	ServerID               int
-	Table                  string
+	InitiallyDropOldTable   bool
+	CriticalLoad            string
+	MaxLoad                 string
+	ServerID                int
+	Table                   string
 }
 
 // DefaultConfig returns default configuration.
 func DefaultConfig() Config {
 	return Config{
-		Host:                   "localhost",
-		Port:                   3306,
-		User:                   "root",
-		Database:               "mse",
-		ChunkSize:              1000,
-		MaxLagMillisecond:      500,
-		AllowOnBefore:          true,
+		Host:                    "localhost",
+		Port:                    3306,
+		User:                    "root",
+		Database:                "mse",
+		ChunkSize:               1000,
+		MaxLagMillisecond:       500,
+		AllowOnBefore:           true,
 		InitiallyDropGhostTable: true,
-		InitiallyDropOldTable:  true,
-		MaxLoad:                "Threads_running=25",
-		ServerID:               100,
+		InitiallyDropOldTable:   true,
+		MaxLoad:                 "Threads_running=25",
+		ServerID:                100,
 	}
 }
 
 // GhostManager manages gh-ost operations.
 type GhostManager struct {
-	config  Config
-	logger  *slog.Logger
+	config Config
+	logger *slog.Logger
 }
 
 // NewGhostManager creates a new gh-ost manager.
 func NewGhostManager(config Config, logger *slog.Logger) *GhostManager {
 	return &GhostManager{
-		config:  config,
-		logger:  logger,
+		config: config,
+		logger: logger,
 	}
 }
 
 // MigrationRequest represents a gh-ost migration request.
 type MigrationRequest struct {
-	Database      string
-	Table         string
+	Database       string
+	Table          string
 	AlterStatement string
 }
 
@@ -184,15 +184,15 @@ func (g *GhostManager) Validate(ctx context.Context) error {
 
 // PTOscManager manages pt-online-schema-change operations.
 type PTOscManager struct {
-	config  Config
-	logger  *slog.Logger
+	config Config
+	logger *slog.Logger
 }
 
 // NewPTOscManager creates a new pt-online-schema-change manager.
 func NewPTOscManager(config Config, logger *slog.Logger) *PTOscManager {
 	return &PTOscManager{
-		config:  config,
-		logger:  logger,
+		config: config,
+		logger: logger,
 	}
 }
 

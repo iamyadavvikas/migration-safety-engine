@@ -37,12 +37,12 @@ func DefaultConfig() Config {
 
 // ShardResult holds the result of a sharded backfill.
 type ShardResult struct {
-	ShardID        int
-	TableName      string
-	RowsProcessed  int64
+	ShardID          int
+	TableName        string
+	RowsProcessed    int64
 	BatchesProcessed int64
-	Duration       time.Duration
-	Error          error
+	Duration         time.Duration
+	Error            error
 }
 
 // BackfillResult holds the overall backfill result.
