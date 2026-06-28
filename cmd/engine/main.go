@@ -72,11 +72,11 @@ func main() {
 
 	runner := statemachine.NewRunner(st, target, log)
 	authService := auth.NewAuth(jwtSecret, jwtExpiry)
-	
+
 	// Initialize worker pool for parallel migrations
 	workerPool := worker.NewPool(runner, 4, log)
 	workerPool.Start(ctx)
-	
+
 	srv := &server{store: st, runner: runner, log: log, auth: authService, replica: replica, workerPool: workerPool}
 
 	// Resume any in-flight migrations from their last persisted state.
@@ -160,13 +160,13 @@ func main() {
 }
 
 type server struct {
-	store  *store.Store
-	runner *statemachine.Runner
-	log    *slog.Logger
-	auth   *auth.Auth
-	replica *pgxpool.Pool
+	store      *store.Store
+	runner     *statemachine.Runner
+	log        *slog.Logger
+	auth       *auth.Auth
+	replica    *pgxpool.Pool
 	workerPool *worker.Pool
-	wg     sync.WaitGroup
+	wg         sync.WaitGroup
 }
 
 func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {

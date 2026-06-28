@@ -372,15 +372,15 @@ func (s *Store) GetDDLLogs(ctx context.Context, migrationID uuid.UUID) ([]DDLExe
 
 // BackfillProgressEntry represents a logged backfill batch.
 type BackfillProgressEntry struct {
-	ID            int64     `json:"id"`
-	MigrationID   uuid.UUID `json:"migration_id"`
-	BatchNumber   int       `json:"batch_number"`
-	RowsAffected  int       `json:"rows_affected"`
-	ThrottleMs    int       `json:"throttle_ms"`
-	DBCPUPct      float64   `json:"db_cpu_pct"`
-	DBRepLagMs    float64   `json:"db_rep_lag_ms"`
-	DBConnsPct    float64   `json:"db_conns_pct"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID           int64     `json:"id"`
+	MigrationID  uuid.UUID `json:"migration_id"`
+	BatchNumber  int       `json:"batch_number"`
+	RowsAffected int       `json:"rows_affected"`
+	ThrottleMs   int       `json:"throttle_ms"`
+	DBCPUPct     float64   `json:"db_cpu_pct"`
+	DBRepLagMs   float64   `json:"db_rep_lag_ms"`
+	DBConnsPct   float64   `json:"db_conns_pct"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // LogBackfillProgress records a backfill batch execution.
@@ -428,14 +428,14 @@ func (s *Store) GetBackfillProgress(ctx context.Context, migrationID uuid.UUID) 
 
 // CanaryObservationEntry represents a logged canary observation.
 type CanaryObservationEntry struct {
-	ID           int64     `json:"id"`
-	MigrationID  uuid.UUID `json:"migration_id"`
-	Step         int       `json:"step"`
-	TrafficPct   int       `json:"traffic_pct"`
-	P99Ms        float64   `json:"p99_ms"`
-	ErrPct       float64   `json:"err_pct"`
-	SLOBreached  bool      `json:"slo_breached"`
-	ObservedAt   time.Time `json:"observed_at"`
+	ID          int64     `json:"id"`
+	MigrationID uuid.UUID `json:"migration_id"`
+	Step        int       `json:"step"`
+	TrafficPct  int       `json:"traffic_pct"`
+	P99Ms       float64   `json:"p99_ms"`
+	ErrPct      float64   `json:"err_pct"`
+	SLOBreached bool      `json:"slo_breached"`
+	ObservedAt  time.Time `json:"observed_at"`
 }
 
 // LogCanaryObservation records a canary step observation.
@@ -481,13 +481,13 @@ func (s *Store) GetCanaryObservations(ctx context.Context, migrationID uuid.UUID
 
 // ServiceRegistration represents a registered service.
 type ServiceRegistration struct {
-	ID             uuid.UUID `json:"id"`
-	MigrationID    uuid.UUID `json:"migration_id"`
-	ServiceName    string    `json:"service_name"`
-	SchemaVersion  int       `json:"schema_version"`
-	Compatible     bool      `json:"compatible"`
-	RegisteredAt   time.Time `json:"registered_at"`
-	LastHeartbeat  time.Time `json:"last_heartbeat"`
+	ID            uuid.UUID `json:"id"`
+	MigrationID   uuid.UUID `json:"migration_id"`
+	ServiceName   string    `json:"service_name"`
+	SchemaVersion int       `json:"schema_version"`
+	Compatible    bool      `json:"compatible"`
+	RegisteredAt  time.Time `json:"registered_at"`
+	LastHeartbeat time.Time `json:"last_heartbeat"`
 }
 
 // RegisterService registers a service as dependent on a migration.
@@ -636,7 +636,7 @@ func (s *Store) GetHeartbeats(ctx context.Context, migrationID uuid.UUID) ([]Ser
 // CheckServiceLiveness checks if all services are still alive (heartbeat within threshold).
 func (s *Store) CheckServiceLiveness(ctx context.Context, migrationID uuid.UUID, threshold time.Duration) (bool, []string, error) {
 	var deadServices []string
-	
+
 	rows, err := s.pool.Query(ctx,
 		`SELECT service_name, last_heartbeat
 		 FROM service_registry
@@ -655,12 +655,12 @@ func (s *Store) CheckServiceLiveness(ctx context.Context, migrationID uuid.UUID,
 		if err := rows.Scan(&serviceName, &lastHeartbeat); err != nil {
 			return false, nil, err
 		}
-		
+
 		if now.Sub(lastHeartbeat) > threshold {
 			deadServices = append(deadServices, serviceName)
 		}
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return false, nil, err
 	}

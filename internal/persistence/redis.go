@@ -17,41 +17,41 @@ type Config struct {
 	DB       int
 
 	// Queue settings
-	QueueSize         int
-	MessageTimeout    time.Duration
-	RetryAttempts     int
-	RetryDelay        time.Duration
+	QueueSize      int
+	MessageTimeout time.Duration
+	RetryAttempts  int
+	RetryDelay     time.Duration
 
 	// Persistence settings
-	PersistenceEnabled bool
+	PersistenceEnabled  bool
 	PersistenceInterval time.Duration
 }
 
 // DefaultConfig returns default configuration.
 func DefaultConfig() Config {
 	return Config{
-		Host:               "localhost",
-		Port:               6379,
-		DB:                 0,
-		QueueSize:          10000,
-		MessageTimeout:     5 * time.Minute,
-		RetryAttempts:      3,
-		RetryDelay:         1 * time.Second,
-		PersistenceEnabled: true,
+		Host:                "localhost",
+		Port:                6379,
+		DB:                  0,
+		QueueSize:           10000,
+		MessageTimeout:      5 * time.Minute,
+		RetryAttempts:       3,
+		RetryDelay:          1 * time.Second,
+		PersistenceEnabled:  true,
 		PersistenceInterval: 30 * time.Second,
 	}
 }
 
 // QueueMessage represents a message in the persistence queue.
 type QueueMessage struct {
-	ID        string          `json:"id"`
-	Type      string          `json:"type"`
-	Payload   json.RawMessage `json:"payload"`
-	Priority  int             `json:"priority"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-	RetryCount int            `json:"retry_count"`
-	Status    string          `json:"status"` // pending, processing, completed, failed
+	ID         string          `json:"id"`
+	Type       string          `json:"type"`
+	Payload    json.RawMessage `json:"payload"`
+	Priority   int             `json:"priority"`
+	CreatedAt  time.Time       `json:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
+	RetryCount int             `json:"retry_count"`
+	Status     string          `json:"status"` // pending, processing, completed, failed
 }
 
 // QueueStore defines the interface for queue operations.
@@ -143,9 +143,9 @@ func (q *RedisQueue) Cleanup(ctx context.Context, olderThan time.Duration) (int6
 
 // MessageProcessor processes messages from the queue.
 type MessageProcessor struct {
-	queue      QueueStore
-	logger     *slog.Logger
-	handlers   map[string]MessageHandler
+	queue       QueueStore
+	logger      *slog.Logger
+	handlers    map[string]MessageHandler
 	workerCount int
 }
 

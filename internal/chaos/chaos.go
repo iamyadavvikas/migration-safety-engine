@@ -182,13 +182,13 @@ func defaultScenarios() []Scenario {
 		{
 			Name:        "cascading_failure",
 			Description: "Multiple failures occur simultaneously",
-			Failures:    []FailureMode{
+			Failures: []FailureMode{
 				FailureReplicationLag,
 				FailureConnectionPoolExhaustion,
 				FailureCPUThrottle,
 			},
-			Duration:    30 * time.Second,
-			Severity:    SeverityCritical,
+			Duration: 30 * time.Second,
+			Severity: SeverityCritical,
 			Expected: ExpectedOutcome{
 				ShouldRollback: true,
 				MaxDowntime:    15 * time.Second,
@@ -380,8 +380,8 @@ func (e *ChaosEngine) GetScenarioNames() []string {
 
 // StressTester performs stress testing with concurrent operations.
 type StressTester struct {
-	logger  *slog.Logger
-	store   StressStore
+	logger *slog.Logger
+	store  StressStore
 }
 
 // StressStore defines the interface for stress test operations.
@@ -412,13 +412,13 @@ type StressTestConfig struct {
 
 // StressTestResult holds the results of stress testing.
 type StressTestResult struct {
-	TotalQueries   int64
-	SuccessfulOps  int64
-	FailedOps      int64
-	AvgLatency     time.Duration
-	P99Latency     time.Duration
+	TotalQueries      int64
+	SuccessfulOps     int64
+	FailedOps         int64
+	AvgLatency        time.Duration
+	P99Latency        time.Duration
 	MaxReplicationLag int64
-	Errors         []string
+	Errors            []string
 }
 
 // RunStressTest executes a stress test.

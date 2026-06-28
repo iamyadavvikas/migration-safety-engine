@@ -163,10 +163,10 @@ func (pm *PoolManager) GetStats() PoolStats {
 	defer pm.mu.RUnlock()
 
 	stats := PoolStats{
-		PrimaryOpen:     pm.primaryDB.Stats().OpenConnections,
-		PrimaryInUse:    pm.primaryDB.Stats().InUse,
-		PrimaryIdle:     pm.primaryDB.Stats().Idle,
-		PrimaryWaitCount: pm.primaryDB.Stats().WaitCount,
+		PrimaryOpen:         pm.primaryDB.Stats().OpenConnections,
+		PrimaryInUse:        pm.primaryDB.Stats().InUse,
+		PrimaryIdle:         pm.primaryDB.Stats().Idle,
+		PrimaryWaitCount:    pm.primaryDB.Stats().WaitCount,
 		PrimaryWaitDuration: pm.primaryDB.Stats().WaitDuration,
 	}
 

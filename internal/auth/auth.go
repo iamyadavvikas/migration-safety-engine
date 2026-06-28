@@ -18,9 +18,9 @@ import (
 type Role string
 
 const (
-	RoleAdmin   Role = "admin"
+	RoleAdmin    Role = "admin"
 	RoleOperator Role = "operator"
-	RoleViewer  Role = "viewer"
+	RoleViewer   Role = "viewer"
 )
 
 // Permission represents a specific action that can be performed.
@@ -76,10 +76,10 @@ const userContextKey contextKey = "user"
 
 // Auth handles JWT token generation and validation.
 type Auth struct {
-	secret     []byte
-	expiry     time.Duration
-	issuer     string
-	users      map[string]UserRecord
+	secret []byte
+	expiry time.Duration
+	issuer string
+	users  map[string]UserRecord
 }
 
 // UserRecord stores user credentials (in production, use a database).

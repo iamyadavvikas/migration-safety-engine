@@ -12,8 +12,8 @@ import (
 )
 
 type mockRunner struct {
-	mu       sync.Mutex
-	calls    []uuid.UUID
+	mu        sync.Mutex
+	calls     []uuid.UUID
 	callCount int
 }
 

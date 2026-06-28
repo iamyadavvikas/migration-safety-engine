@@ -17,12 +17,12 @@ type ColumnSpec struct {
 
 // Output holds the generated SQL fragments for a migration plan.
 type Output struct {
-	Expand   []string // DDL to add columns/indexes (always NULL for safety)
-	Contract []string // DDL to drop legacy columns + enforce NOT NULL constraints
-	Rollback []string // DDL to undo expand
-	BackfillExpr     string // source_expr for backfill (first column with expression, for tracking)
-	BackfillColumn   string // column name for backfill (first column with expression, for tracking)
-	BackfillMulti    string // composite UPDATE statement for multiple columns
+	Expand         []string // DDL to add columns/indexes (always NULL for safety)
+	Contract       []string // DDL to drop legacy columns + enforce NOT NULL constraints
+	Rollback       []string // DDL to undo expand
+	BackfillExpr   string   // source_expr for backfill (first column with expression, for tracking)
+	BackfillColumn string   // column name for backfill (first column with expression, for tracking)
+	BackfillMulti  string   // composite UPDATE statement for multiple columns
 }
 
 // Generate produces expand/contract/rollback DDL from declarative specs.
