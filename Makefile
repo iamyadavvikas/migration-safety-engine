@@ -4,7 +4,7 @@
 DB_DSN ?= postgres://mse:mse@localhost:5499/mse?sslmode=disable
 ENGINE_ADDR ?= :8080
 
-.PHONY: up down migrate run demo demo-rollback reset-demo test lint tidy build fmt vet load load-under-backfill frontend frontend-dev frontend-build
+.PHONY: up down migrate run demo demo-rollback reset-demo test lint tidy build fmt vet load load-under-backfill frontend frontend-dev frontend-build ci pr
 
 up: ## Start postgres + prometheus + grafana
 	docker compose up -d
@@ -114,3 +114,38 @@ tunnel-down: ## Stop Cloudflare Tunnel
 		./scripts/tunnel.sh serveo stop 2>/dev/null || true; \
 	fi
 	@echo "Tunnel stopped"
+
+# ============================================================
+# CI/CD Commands
+# ============================================================
+
+ci: ## Run full CI pipeline locally (lint + test + build)
+	@echo "=== Running CI Pipeline ==="
+	@echo "--- Lint ---"
+	go vet ./...
+	gofmt -l .
+	@echo "--- Go Tests ---"
+	go test ./... -v -count=1 -timeout 120s
+	@echo "--- Frontend ---"
+	cd frontend && npm ci && npx tsc --noEmit && npm run build
+	@echo "--- Build Binary ---"
+	go build -o /tmp/mse-engine ./cmd/engine
+	@echo "=== CI Passed ==="
+
+pr: ## Create a PR for current changes
+	@echo "Creating PR..."
+	@if ! git diff --quiet; then \
+		git add -A; \
+		git commit -m "feat: update $(shell date +%Y-%m-%d)"; \
+	fi
+	@BRANCH="feature/$(shell date +%s)"; \
+	git checkout -b $$BRANCH; \
+	git push -u origin $$BRANCH; \
+	hub pull-request -m "Feature Update" -b main -h $$BRANCH 2>/dev/null || \
+		echo "PR created: https://github.com/iamyadavvikas/migration-safety-engine/pull/new/$$BRANCH"
+
+docker-build: ## Build Docker image
+	docker build -t mse-engine:latest .
+
+docker-run: ## Run Docker container
+	docker run -p 8080:8080 -e DB_DSN=postgres://mse:mse@host.docker.internal:5432/mse mse-engine:latest

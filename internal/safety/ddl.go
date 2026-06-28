@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -212,11 +213,17 @@ func (e *DDLExecutor) ExecDDL(ctx context.Context, stmt string) (time.Duration, 
 	}
 	defer tx.Rollback(ctx)
 
-	// Set lock_timeout
-	_, err = tx.Exec(ctx, fmt.Sprintf("SET LOCAL lock_timeout = '%dms', statement_timeout = '%dms'",
-		e.config.LockTimeout.Milliseconds(), e.config.StatementTimeout.Milliseconds()))
+	// Set lock_timeout and statement_timeout (separate statements for PostgreSQL)
+	_, err = tx.Exec(ctx, fmt.Sprintf("SET LOCAL lock_timeout = '%dms'",
+		e.config.LockTimeout.Milliseconds()))
 	if err != nil {
-		return 0, fmt.Errorf("set timeouts: %w", err)
+		return 0, fmt.Errorf("set lock_timeout: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, fmt.Sprintf("SET LOCAL statement_timeout = '%dms'",
+		e.config.StatementTimeout.Milliseconds()))
+	if err != nil {
+		return 0, fmt.Errorf("set statement_timeout: %w", err)
 	}
 
 	// Execute DDL
@@ -240,13 +247,9 @@ func (e *DDLExecutor) ExecDDL(ctx context.Context, stmt string) (time.Duration, 
 
 // isConcurrentlyDDL checks if a DDL statement uses CONCURRENTLY (must run outside tx)
 func isConcurrentlyDDL(stmt string) bool {
-	// Simple check for CONCURRENTLY keyword
-	for i := 0; i < len(stmt)-12; i++ {
-		if stmt[i:i+13] == "CONCURRENTLY" || stmt[i:i+13] == "concurrently" {
-			return true
-		}
-	}
-	return false
+	// Check for CONCURRENTLY keyword (case-insensitive)
+	upper := strings.ToUpper(stmt)
+	return strings.Contains(upper, "CONCURRENTLY")
 }
 
 // execConcurrently executes CONCURRENTLY DDL outside a transaction with retries
@@ -267,10 +270,16 @@ func (e *DDLExecutor) execConcurrently(ctx context.Context, stmt string) (time.D
 			return 0, fmt.Errorf("safety check failed after %d attempts: %w", maxRetries, err)
 		}
 
-		// Execute outside transaction with statement_timeout
+		// Set statement_timeout separately (not in same Exec call)
 		_, err := e.pool.Exec(ctx, fmt.Sprintf(
-			"SET statement_timeout = '%dms'; %s",
-			e.config.StatementTimeout.Milliseconds(), stmt))
+			"SET statement_timeout = '%dms'", e.config.StatementTimeout.Milliseconds()))
+		if err != nil {
+			e.log.Warn("failed to set statement_timeout", "err", err)
+			// Continue anyway, don't fail
+		}
+
+		// Execute DDL outside transaction
+		_, err = e.pool.Exec(ctx, stmt)
 		if err != nil {
 			if attempt < maxRetries-1 {
 				e.log.Warn("CONCURRENTLY DDL failed, retrying",

@@ -31,6 +31,54 @@ export interface MigrationRecord {
   updated_at: string
   table?: string
   plan?: MigrationPlan
+  // Executive Health Panel fields
+  row_count?: number
+  duration?: string
+  data_parity?: number
+  rows_verified?: number
+  drift_detected?: number
+  throttle_events?: number
+  data_loss?: number
+  uptime?: string
+  downtime_cost?: number
+  downtime_seconds?: number
+  engineering_saved?: number
+  cost_saved?: number
+  throughput?: number
+  // Data Parity fields
+  source_rows?: number
+  dest_rows?: number
+  source_checksum?: string
+  dest_checksum?: string
+  null_mismatches?: number
+  type_conversion_valid?: boolean
+  fk_integrity_valid?: boolean
+  verification_method?: string
+  deletes_processed?: number
+  updates_processed?: number
+  alters_handled?: number
+  // Timeline fields
+  start_time?: string
+  end_time?: string
+  // Throttle events
+  throttle_events_list?: ThrottleEvent[]
+  // Rollback events
+  rollback_events?: RollbackEvent[]
+}
+
+export interface ThrottleEvent {
+  timestamp: string
+  reason: string
+  duration: string
+  metric: string
+  threshold: string
+  current: string
+}
+
+export interface RollbackEvent {
+  timestamp: string
+  type: 'breach' | 'trip' | 'init' | 'drain' | 'drop' | 'complete' | 'verify'
+  message: string
 }
 
 export interface MigrationPlan {

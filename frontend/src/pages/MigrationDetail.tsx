@@ -14,6 +14,10 @@ import type {
 import { STATE_COLORS, STATE_LABELS, STATE_FLOW } from '../types'
 import StateMachineGraph from '../components/StateMachineGraph'
 import MetricsPanel from '../components/MetricsPanel'
+import ExecutiveHealthPanel from '../components/ExecutiveHealthPanel'
+import DataParityPanel from '../components/DataParityPanel'
+import DisasterAvertedChart from '../components/DisasterAvertedChart'
+import CostEfficiencyPanel from '../components/CostEfficiencyPanel'
 
 export default function MigrationDetail() {
   const { id } = useParams<{ id: string }>()
@@ -250,6 +254,26 @@ export default function MigrationDetail() {
           </div>
 
           <StateMachineGraph currentState={record.state} />
+
+          {/* Executive Health Panel - Shows after migration completes */}
+          {record.terminal && (
+            <ExecutiveHealthPanel record={record} />
+          )}
+
+          {/* Data Parity Panel - Shows after migration completes */}
+          {record.terminal && (
+            <DataParityPanel record={record} />
+          )}
+
+          {/* Disaster Averted Chart - Shows when there are throttle events */}
+          {record.throttle_events && record.throttle_events > 0 && (
+            <DisasterAvertedChart record={record} />
+          )}
+
+          {/* Cost Efficiency Panel - Shows after migration completes */}
+          {record.terminal && (
+            <CostEfficiencyPanel record={record} />
+          )}
 
           {/* State Flow Timeline */}
           <div className="card fade-in" style={{ animationDelay: '0.1s' }}>
