@@ -15,10 +15,22 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  engine:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DB_DSN: postgres://mse:mse@postgres:5432/mse?sslmode=disable
+      TARGET_DSN: postgres://mse:mse@postgres:5432/mse?sslmode=disable
+      ENGINE_ADDR: :8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "9093:9090"
+      - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -28,10 +40,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     ports:
-      # Host 3002 to avoid colliding with other local apps on :3000/:3001 (e.g. a
-      # Next.js dev server and tweakresume). Grafana still listens on 3000 inside
-      # the container.
-      - "3004:3000"
+      - "3002:3000"
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
