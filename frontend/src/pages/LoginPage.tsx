@@ -28,17 +28,17 @@ const TESTIMONIALS = [
     quote: "We had a 200M row table backfill that kept crashing at 3am. MSE picked up exactly where it left off every time. No data loss, no rework. It just worked.",
     name: "Sarah Chen",
     role: "Staff Engineer, Infra",
-    company: "Meridian Health",
+    company: "",
   },
   {
     quote: "Our last schema migration before MSE took down checkout for 12 minutes. With the canary + auto-rollback, we deployed the same change at midnight with zero issues. The p99 breach triggered a rollback before anyone even noticed.",
     name: "Marcus Rivera",
     role: "CTO",
-    company: "Velocity Commerce",
+    company: "",
   },
 ]
 
-const LOGOS = ['Meridian Health', 'Velocity Commerce', 'Atlas Financial', 'Prism Analytics', 'NovaTech', 'Helios Systems']
+const LOGOS: string[] = []
 
 function LifecycleDemo() {
   const [current, setCurrent] = useState(0)
@@ -195,14 +195,16 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       </section>
 
       {/* ===== SOCIAL PROOF ===== */}
-      <section className="lp-social">
-        <p className="lp-social-label">Trusted by engineering teams at</p>
-        <div className="lp-logos">
-          {LOGOS.map(name => (
-            <div key={name} className="lp-logo">{name}</div>
-          ))}
-        </div>
-      </section>
+      {LOGOS.length > 0 && (
+        <section className="lp-social">
+          <p className="lp-social-label">Trusted by engineering teams at</p>
+          <div className="lp-logos">
+            {LOGOS.map(name => (
+              <div key={name} className="lp-logo">{name}</div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ===== FEATURES ===== */}
       <section className="lp-features">
@@ -377,7 +379,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 <div className="lp-testimonial-avatar">{t.name[0]}</div>
                 <div>
                   <div className="lp-testimonial-name">{t.name}</div>
-                  <div className="lp-testimonial-role">{t.role} at {t.company}</div>
+                  <div className="lp-testimonial-role">{t.role}{t.company ? ` at ${t.company}` : ''}</div>
                 </div>
               </div>
             </div>
