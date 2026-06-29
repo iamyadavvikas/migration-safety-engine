@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { MigrationRecord } from '../types'
 
 interface CostEfficiencyPanelProps {
@@ -5,6 +6,9 @@ interface CostEfficiencyPanelProps {
 }
 
 export default function CostEfficiencyPanel({ record }: CostEfficiencyPanelProps) {
+  const [showDetailed, setShowDetailed] = useState(false)
+  const [copied, setCopied] = useState(false)
+
   const costMetrics = {
     downtimeCost: record.downtime_cost || 0.00,
     downtimeSeconds: record.downtime_seconds || 0.00,
@@ -32,6 +36,56 @@ export default function CostEfficiencyPanel({ record }: CostEfficiencyPanelProps
       rollbackTime: '2m 34s',
       cost: `$${costMetrics.downtimeCost.toFixed(2)}`,
     },
+  }
+
+  const handleExportROI = () => {
+    const rows = [
+      ['Metric', 'Manual Process', 'MSE Engine'],
+      ['Duration', comparison.manual.duration, comparison.mse.duration],
+      ['Engineers Required', comparison.manual.engineers, comparison.mse.engineers],
+      ['Risk Level', comparison.manual.risk, comparison.mse.risk],
+      ['Downtime', comparison.manual.downtime, comparison.mse.downtime],
+      ['Data Loss Risk', comparison.manual.dataLossRisk, comparison.mse.dataLossRisk],
+      ['Rollback Time', comparison.manual.rollbackTime, comparison.mse.rollbackTime],
+      ['Cost (@ $100/hr)', comparison.manual.cost, comparison.mse.cost],
+      ['', '', ''],
+      ['TIME SAVED', '', `${costMetrics.engineeringHours} hours`],
+      ['COST SAVED', '', `$${costMetrics.costSaved.toLocaleString()}`],
+      ['THROUGHPUT (AVG)', '', `${costMetrics.throughput.toLocaleString()} rows/sec`],
+    ]
+    const csv = rows.map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `mse-roi-report-${record.migration_id || 'migration'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleShare = async () => {
+    const text = `Migration Safety Engine — ROI Report
+Migration: ${record.migration_id || 'N/A'}
+Table: ${record.table || 'N/A'}
+Duration: ${comparison.mse.duration}
+Downtime: ${comparison.mse.downtime}
+Cost: ${comparison.mse.cost} (vs ${comparison.manual.cost} manual)
+Time Saved: ${costMetrics.engineeringHours} hours
+Risk: ${comparison.mse.risk} (vs ${comparison.manual.risk} manual)`
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
 
   return (
@@ -155,26 +209,69 @@ export default function CostEfficiencyPanel({ record }: CostEfficiencyPanelProps
 
       {/* Actions */}
       <div className="cost-actions">
-        <button className="btn btn-sm">
+        <button className="btn btn-sm" onClick={handleExportROI}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
           </svg>
           Export ROI Report
         </button>
-        <button className="btn btn-sm">
+        <button className="btn btn-sm" onClick={handleShare}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/>
+            {copied ? (
+              <path d="M20 6L9 17l-5-5"/>
+            ) : (
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/>
+            )}
           </svg>
-          Share with Team
+          {copied ? 'Copied!' : 'Share with Team'}
         </button>
-        <button className="btn btn-sm">
+        <button className="btn btn-sm" onClick={() => setShowDetailed(!showDetailed)}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="3"/>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
-          View Detailed Metrics
+          {showDetailed ? 'Hide Detailed Metrics' : 'View Detailed Metrics'}
         </button>
       </div>
+
+      {/* Detailed Metrics Panel */}
+      {showDetailed && (
+        <div className="cost-detailed">
+          <div className="cost-detailed-grid">
+            <div className="cost-detailed-card">
+              <div className="cost-detailed-label">BATCH SIZE</div>
+              <div className="cost-detailed-value">{(record as any).batch_size || 1000}</div>
+            </div>
+            <div className="cost-detailed-card">
+              <div className="cost-detailed-label">THROTTLE MS</div>
+              <div className="cost-detailed-value">{(record as any).throttle_ms || 100}ms</div>
+            </div>
+            <div className="cost-detailed-card">
+              <div className="cost-detailed-label">TOTAL ROWS</div>
+              <div className="cost-detailed-value">{((record as any).total_rows || 0).toLocaleString()}</div>
+            </div>
+            <div className="cost-detailed-card">
+              <div className="cost-detailed-label">ROWS SCANNED</div>
+              <div className="cost-detailed-value">{((record as any).rows_scanned || 0).toLocaleString()}</div>
+            </div>
+            <div className="cost-detailed-card">
+              <div className="cost-detailed-label">ROWS MODIFIED</div>
+              <div className="cost-detailed-value">{((record as any).rows_modified || 0).toLocaleString()}</div>
+            </div>
+            <div className="cost-detailed-card">
+              <div className="cost-detailed-label">ROWS DIVERGED</div>
+              <div className="cost-detailed-value">{((record as any).rows_diverged || 0).toLocaleString()}</div>
+            </div>
+          </div>
+          <div className="cost-detailed-info">
+            <span className="cost-detailed-info-label">Plan ID:</span> {(record as any).plan_id || 'N/A'}
+            {' · '}
+            <span className="cost-detailed-info-label">Started:</span> {(record as any).started_at || 'N/A'}
+            {' · '}
+            <span className="cost-detailed-info-label">Completed:</span> {(record as any).completed_at || 'N/A'}
+          </div>
+        </div>
+      )}
 
       <style>{`
         .cost-efficiency-panel {
@@ -376,9 +473,65 @@ export default function CostEfficiencyPanel({ record }: CostEfficiencyPanelProps
           font-size: 0.8rem;
         }
 
+        .cost-detailed {
+          padding: 16px 20px;
+          border-top: 1px solid var(--border);
+          background: rgba(0, 0, 0, 0.15);
+          animation: fadeIn 0.2s ease;
+        }
+
+        .cost-detailed-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 12px;
+          margin-bottom: 12px;
+        }
+
+        .cost-detailed-card {
+          background: rgba(0, 0, 0, 0.2);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          padding: 12px;
+          text-align: center;
+        }
+
+        .cost-detailed-label {
+          font-size: 0.65rem;
+          font-weight: 600;
+          color: var(--text-muted);
+          letter-spacing: 0.08em;
+          margin-bottom: 4px;
+        }
+
+        .cost-detailed-value {
+          font-size: 1.1rem;
+          font-weight: 700;
+          font-family: 'JetBrains Mono', monospace;
+          color: var(--text-primary);
+        }
+
+        .cost-detailed-info {
+          font-size: 0.75rem;
+          color: var(--text-muted);
+          text-align: center;
+        }
+
+        .cost-detailed-info-label {
+          font-weight: 600;
+          color: var(--text-secondary);
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
         @media (max-width: 768px) {
           .cost-metrics-grid {
             grid-template-columns: 1fr;
+          }
+          .cost-detailed-grid {
+            grid-template-columns: repeat(2, 1fr);
           }
         }
       `}</style>
