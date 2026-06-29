@@ -5,6 +5,8 @@ primary_region = "sjc"
 
 [env]
   PORT = "8080"
+  LOG_LEVEL = "info"
+  LOG_FORMAT = "json"
 
 [http_service]
   internal_port = 8080

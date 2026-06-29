@@ -44,7 +44,31 @@ jobs:
           fi
 
   test-go:
-    name: Go Tests
+    name: Go Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend assets
+        working-directory: frontend
+        run: npm ci && npm run build
+
+      - name: Run unit tests
+        run: go test ./internal/auth/... ./internal/ddl/... ./internal/plan/... ./internal/safety/... ./internal/worker/... -v -count=1 -timeout 60s
+
+  test-integration:
+    name: Integration Tests (Postgres)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -52,7 +76,7 @@ jobs:
         env:
           POSTGRES_USER: mse
           POSTGRES_PASSWORD: mse
-          POSTGRES_DB: mse_test
+          POSTGRES_DB: mse
         ports:
           - 5432:5432
         options: >-
@@ -79,16 +103,43 @@ jobs:
         working-directory: frontend
         run: npm ci && npm run build
 
-      - name: Install dependencies
-        run: go mod download
-
-      - name: Run tests
-        run: go test ./... -v -count=1 -timeout 120s -race
+      - name: Run database migrations
         env:
-          DATABASE_URL: postgres://mse:mse@localhost:5432/mse_test?sslmode=disable
+          PGHOST: localhost
+          PGUSER: mse
+          PGPASSWORD: mse
+          PGDATABASE: mse
+        run: |
+          for f in migrations/*.sql; do
+            echo "Applying $f..."
+            psql -f "$f"
+          done
+        # Use the postgres service container's psql
+        # We need to install psql client
+        shell: bash
 
-      - name: Build binary
-        run: go build -o /tmp/mse-engine ./cmd/engine
+      - name: Install psql client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Run database migrations
+        env:
+          PGHOST: localhost
+          PGUSER: mse
+          PGPASSWORD: mse
+          PGDATABASE: mse
+        run: |
+          for f in migrations/*.sql; do
+            echo "Applying $f..."
+            psql -f "$f"
+          done
+
+      - name: Run integration tests
+        env:
+          MSE_TEST_DSN: "postgres://mse:mse@localhost:5432/mse?sslmode=disable"
+          DATABASE_URL: "postgres://mse:mse@localhost:5432/mse?sslmode=disable"
+        run: go test ./internal/statemachine/... -v -count=1 -timeout 120s
 
   test-frontend:
     name: Frontend Tests
@@ -108,7 +159,11 @@ jobs:
 
       - name: Type check
         working-directory: frontend
-        run: npx tsc --noEmit
+        run: npx tsc -b
+
+      - name: Unit tests
+        working-directory: frontend
+        run: npx vitest run
 
       - name: Build
         working-directory: frontend
