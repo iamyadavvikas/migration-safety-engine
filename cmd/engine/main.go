@@ -137,7 +137,29 @@ func main() {
 		http.ServeFileFS(w, r, distFS, "index.html")
 	}))
 
-	httpSrv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	// SPA middleware: intercept browser navigation requests (Accept: text/html)
+	// so that page reloads on client-side routes serve index.html instead of 401.
+	spaHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		accept := r.Header.Get("Accept")
+		isBrowserNav := strings.Contains(accept, "text/html") && !strings.Contains(accept, "application/json")
+		isAPIRequest := r.Header.Get("X-Requested-With") == "XMLHttpRequest" ||
+			strings.Contains(accept, "application/json") ||
+			r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE"
+
+		if isBrowserNav && !isAPIRequest {
+			// Check if path matches a static asset (has file extension)
+			path := strings.TrimPrefix(r.URL.Path, "/")
+			if path == "" || !strings.Contains(path, ".") {
+				// SPA route — serve index.html
+				http.ServeFileFS(w, r, distFS, "index.html")
+				return
+			}
+		}
+
+		mux.ServeHTTP(w, r)
+	})
+
+	httpSrv := &http.Server{Addr: addr, Handler: spaHandler, ReadHeaderTimeout: 5 * time.Second}
 
 	go func() {
 		log.Info("engine listening", "addr", addr)
