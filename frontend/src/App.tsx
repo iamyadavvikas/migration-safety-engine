@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ToastProvider } from './components/Toast'
@@ -8,6 +8,7 @@ import MigrationDetail from './pages/MigrationDetail'
 import NewPlan from './pages/NewPlan'
 import DriftScanPage from './pages/DriftScanPage'
 import LoginPage from './pages/LoginPage'
+import NotFoundPage from './pages/NotFoundPage'
 import { api } from './lib/api'
 
 const ONBOARDED_KEY = 'mse_onboarded'
@@ -123,7 +124,7 @@ export default function App() {
                 <Route path="/migrations/:id" element={<MigrationDetail />} />
                 <Route path="/plans/new" element={<NewPlan />} />
                 <Route path="/drift-scan" element={<DriftScanPage />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
+                <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </main>
             <footer className="footer" role="contentinfo">

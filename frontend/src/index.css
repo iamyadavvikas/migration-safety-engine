@@ -2386,3 +2386,55 @@ input[type="checkbox"]:disabled {
     font-size: 1.4rem;
   }
 }
+
+/* ============================================================
+   404 Page
+   ============================================================ */
+
+.not-found {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 70vh;
+  padding: 40px 20px;
+}
+
+.not-found-inner {
+  text-align: center;
+  max-width: 400px;
+}
+
+.not-found-icon {
+  margin-bottom: 24px;
+}
+
+.not-found-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 5rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--accent), #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+
+.not-found-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.not-found-desc {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin-bottom: 32px;
+}
+
+.not-found-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
