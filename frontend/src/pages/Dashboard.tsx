@@ -312,22 +312,52 @@ export default function Dashboard() {
         </div>
       ) : (migrations ?? []).length === 0 ? (
         <div className="empty-state fade-in">
-          <div className="empty-icon" aria-hidden="true">⬡</div>
-          <h3>No migrations yet</h3>
-          <p>Submit a migration plan or run the demo to see the state machine in action.</p>
-          <div style={{ marginTop: 24, display: 'flex', gap: 10, justifyContent: 'center' }}>
-            <button className="btn btn-primary" onClick={handleRunDemo} disabled={runningDemo}>
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2l10 6-10 6V2z"/></svg>
-              {runningDemo ? 'Running...' : 'Run Demo'}
-            </button>
-            <button className="btn" onClick={() => navigate('/plans/new')}>
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
-              Create Plan
-            </button>
+          <div className="empty-icon" aria-hidden="true">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <rect width="48" height="48" rx="12" fill="var(--accent)" fillOpacity="0.1"/>
+              <path d="M24 8L12 14v10c0 7 5 13 12 15 7-2 12-8 12-15V14L24 8z" stroke="var(--accent)" strokeWidth="2" fill="none"/>
+              <path d="M18 24l4 4 8-8" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </div>
-          <div className="empty-hint" style={{ marginTop: 28 }}>
-            <p><strong>What happens:</strong> The engine will add a column, backfill 50k rows,
-            run a canary at 1/5/25/100%, verify data parity, and drop the legacy column.</p>
+          <h3>Get started in 3 steps</h3>
+          <p>Run a demo to see the engine in action, or create your own migration plan.</p>
+
+          <div className="empty-steps">
+            <div className="empty-step">
+              <span className="empty-step-num">1</span>
+              <div className="empty-step-content">
+                <strong>Run Demo</strong>
+                <span>See expand &rarr; backfill &rarr; canary &rarr; contract with sample data</span>
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={handleRunDemo} disabled={runningDemo}>
+                {runningDemo ? 'Running...' : 'Run Demo'}
+              </button>
+            </div>
+            <div className="empty-step">
+              <span className="empty-step-num">2</span>
+              <div className="empty-step-content">
+                <strong>Create Plan</strong>
+                <span>Define your table, columns, SLO gates, and canary steps</span>
+              </div>
+              <button className="btn btn-sm" onClick={() => navigate('/plans/new')}>
+                Create Plan
+              </button>
+            </div>
+            <div className="empty-step">
+              <span className="empty-step-num">3</span>
+              <div className="empty-step-content">
+                <strong>Drift Scan</strong>
+                <span>Check data parity before migrating (read-only, safe)</span>
+              </div>
+              <button className="btn btn-sm" onClick={() => navigate('/drift-scan')}>
+                Drift Scan
+              </button>
+            </div>
+          </div>
+
+          <div className="empty-hint">
+            <p><strong>What the demo does:</strong> Adds a column, backfills 50k rows,
+            runs canary at 1/5/25/100%, verifies data parity, and contracts the schema.</p>
           </div>
         </div>
       ) : (
