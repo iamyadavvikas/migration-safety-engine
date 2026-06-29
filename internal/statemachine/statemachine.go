@@ -635,6 +635,32 @@ func (r *Runner) canary(ctx context.Context, rec *store.Record) (Result, error) 
 // safe to run.
 func (r *Runner) cutover(ctx context.Context, rec *store.Record) (Result, error) {
 	p := rec.Plan
+
+	// Phase 3 gate: wait for all registered services to be compatible
+	ready, notReady, err := r.store.AllServicesReady(ctx, rec.ID)
+	if err != nil {
+		r.log.Warn("failed to check service readiness, proceeding", "err", err)
+	} else if !ready {
+		// Services registered but not all ready — wait and re-check
+		r.log.Info("waiting for services to become ready",
+			"migration", rec.ID, "not_ready", notReady)
+		time.Sleep(5 * time.Second)
+		ready, notReady, err = r.store.AllServicesReady(ctx, rec.ID)
+		if err != nil {
+			r.log.Warn("failed to re-check service readiness", "err", err)
+		} else if !ready {
+			why := fmt.Sprintf("cutover blocked: %d services not ready", notReady)
+			r.log.Warn("cutover aborted", "migration", rec.ID, "why", why)
+			ckpt := map[string]any{"cutover_abort": why, "services_not_ready": notReady}
+			if p.OnFailure == plan.OnFailureRollback {
+				telemetry.IncRollback(p.ID)
+				return Result{Checkpoint: ckpt, Next: StateRollingBack}, nil
+			}
+			return Result{}, fmt.Errorf("%s (on_failure=%s)", why, p.OnFailure)
+		}
+		r.log.Info("all services ready, proceeding with cutover", "migration", rec.ID)
+	}
+
 	if p.Backfill.Column == "" {
 		// Nothing derived to gate; pass through the happy path.
 		return Result{Checkpoint: map[string]any{"step": string(StateCutover)}}, nil

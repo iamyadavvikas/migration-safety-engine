@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -22,14 +23,25 @@ import (
 
 	"github.com/iamyadavvikas/migration-safety-engine/frontend"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/auth"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/chaos"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/logging"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/plan"
+	"github.com/iamyadavvikas/migration-safety-engine/internal/ratelimit"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/statemachine"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/store"
 	"github.com/iamyadavvikas/migration-safety-engine/internal/worker"
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// Structured logging from env
+	logCfg := logging.DefaultConfig()
+	if lvl := os.Getenv("LOG_LEVEL"); lvl != "" {
+		logCfg.Level = lvl
+	}
+	if fmt := os.Getenv("LOG_FORMAT"); fmt != "" {
+		logCfg.Format = fmt
+	}
+	log := logging.NewLogger(logCfg)
 
 	dsn := envOr("DB_DSN", "postgres://mse:mse@localhost:5499/mse?sslmode=disable")
 	// TARGET_DSN is the application database the engine migrates. It defaults to the
@@ -40,6 +52,11 @@ func main() {
 	addr := envOr("ENGINE_ADDR", ":8080")
 	jwtSecret := envOr("JWT_SECRET", "")
 	jwtExpiry := 24 * time.Hour
+
+	// Production auth guards
+	if jwtSecret == "" {
+		log.Warn("JWT_SECRET not set — tokens are invalidated on every restart. Set JWT_SECRET for production use.")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -77,6 +94,9 @@ func main() {
 	workerPool := worker.NewPool(runner, 4, log)
 	workerPool.Start(ctx)
 
+	// Rate limiter — 10 req/s per client, burst of 20
+	limiter := ratelimit.NewLimiter(ratelimit.DefaultConfig())
+
 	srv := &server{store: st, runner: runner, log: log, auth: authService, replica: replica, workerPool: workerPool}
 
 	// Resume any in-flight migrations from their last persisted state.
@@ -105,6 +125,10 @@ func main() {
 	mux.HandleFunc("POST /migrations/{id}/services", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionWriteMigrations, http.HandlerFunc(srv.registerService))).ServeHTTP)
 	mux.HandleFunc("PUT /migrations/{id}/services/{service}", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionWriteMigrations, http.HandlerFunc(srv.updateServiceCompat))).ServeHTTP)
 	mux.HandleFunc("GET /migrations/{id}/services", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionReadSafety, http.HandlerFunc(srv.getServices))).ServeHTTP)
+
+	// Chaos testing endpoint
+	mux.HandleFunc("POST /chaos/run", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionManageSettings, http.HandlerFunc(srv.runChaosScenario))).ServeHTTP)
+	mux.HandleFunc("GET /chaos/scenarios", srv.auth.RequireAuth(srv.auth.RequirePermission(auth.PermissionReadSafety, http.HandlerFunc(srv.listChaosScenarios))).ServeHTTP)
 
 	distFS, err := fs.Sub(frontend.Assets, "dist")
 	if err != nil {
@@ -159,7 +183,10 @@ func main() {
 		mux.ServeHTTP(w, r)
 	})
 
-	httpSrv := &http.Server{Addr: addr, Handler: spaHandler, ReadHeaderTimeout: 5 * time.Second}
+	// Apply rate limiting
+	finalHandler := limiter.Middleware(spaHandler)
+
+	httpSrv := &http.Server{Addr: addr, Handler: finalHandler, ReadHeaderTimeout: 5 * time.Second}
 
 	go func() {
 		log.Info("engine listening", "addr", addr)
@@ -189,6 +216,72 @@ type server struct {
 	replica    *pgxpool.Pool
 	workerPool *worker.Pool
 	wg         sync.WaitGroup
+}
+
+// chaosStoreAdapter adapts pgxpool to the chaos.ChaosStore interface.
+type chaosStoreAdapter struct {
+	target *pgxpool.Pool
+}
+
+func (c *chaosStoreAdapter) CreateTestTable(ctx context.Context, name string, rows int) error {
+	_, err := c.target.Exec(ctx, fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			id SERIAL PRIMARY KEY,
+			data TEXT,
+			status TEXT DEFAULT 'pending',
+			updated_at TIMESTAMPTZ DEFAULT NOW()
+		)
+	`, name))
+	if err != nil {
+		return err
+	}
+	// Insert test rows
+	for i := 0; i < rows; i += 1000 {
+		batch := rows - i
+		if batch > 1000 {
+			batch = 1000
+		}
+		for j := 0; j < batch; j++ {
+			_, err := c.target.Exec(ctx, fmt.Sprintf(
+				`INSERT INTO %s (data) VALUES ($1)`, name),
+				fmt.Sprintf("test_%d_%d", i, j))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (c *chaosStoreAdapter) DropTestTable(ctx context.Context, name string) error {
+	_, err := c.target.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, name))
+	return err
+}
+
+func (c *chaosStoreAdapter) GetRowCount(ctx context.Context, name string) (int64, error) {
+	var count int64
+	err := c.target.QueryRow(ctx, fmt.Sprintf(`SELECT count(*) FROM %s`, name)).Scan(&count)
+	return count, err
+}
+
+func (c *chaosStoreAdapter) InjectNetworkPartition(_ context.Context, _ time.Duration) error {
+	return nil // Simulated — no real partition injection in demo
+}
+
+func (c *chaosStoreAdapter) InjectReplicationLag(_ context.Context, _ int) error {
+	return nil
+}
+
+func (c *chaosStoreAdapter) InjectLockTimeout(_ context.Context, _ int) error {
+	return nil
+}
+
+func (c *chaosStoreAdapter) InjectConnectionExhaustion(_ context.Context, _ int) error {
+	return nil
+}
+
+func (c *chaosStoreAdapter) ResetAll(_ context.Context) error {
+	return nil
 }
 
 func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
@@ -675,6 +768,53 @@ func (s *server) resumeAll(ctx context.Context) {
 		s.log.Info("resuming migration", "migration", id)
 		s.drive(id)
 	}
+}
+
+// runChaosScenario runs a chaos engineering test scenario.
+func (s *server) runChaosScenario(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Scenario string `json:"scenario"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Scenario == "" {
+		http.Error(w, "scenario name required", http.StatusBadRequest)
+		return
+	}
+
+	// Get chaos engine from context — we'll use a simple approach
+	adapter := &chaosStoreAdapter{target: s.store.Target()}
+	ce := chaos.NewChaosEngine(adapter, s.log)
+
+	result, err := ce.RunScenario(r.Context(), req.Scenario)
+	if err != nil {
+		http.Error(w, "run scenario: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"scenario":           result.Scenario,
+		"start_time":         result.StartTime,
+		"end_time":           result.EndTime,
+		"duration":           result.Duration.String(),
+		"final_row_count":    result.FinalRowCount,
+		"verification_error": result.VerificationError,
+	})
+}
+
+// listChaosScenarios returns available chaos test scenarios.
+func (s *server) listChaosScenarios(w http.ResponseWriter, r *http.Request) {
+	adapter := &chaosStoreAdapter{target: s.store.Target()}
+	ce := chaos.NewChaosEngine(adapter, s.log)
+
+	scenarios := ce.GetScenarioNames()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"scenarios": scenarios,
+	})
 }
 
 func envOr(k, def string) string {

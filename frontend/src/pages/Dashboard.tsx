@@ -6,6 +6,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { DEMO_PLAN, POLL_INTERVAL_MS, PAGE_SIZE } from '../lib/constants'
 import type { MigrationRecord } from '../types'
 import { STATE_COLORS } from '../types'
+import SystemStatusPanel from '../components/SystemStatusPanel'
 
 /* Mini sparkline SVG — shows trend of recent migrations */
 function Sparkline({ data, color }: { data: number[]; color: string }) {
@@ -287,6 +288,8 @@ export default function Dashboard() {
           <span>{active.length} migration{active.length > 1 ? 's' : ''} running</span>
         </div>
       )}
+
+      <SystemStatusPanel />
 
       {error && (
         <div className="error-banner scale-in" role="alert">
