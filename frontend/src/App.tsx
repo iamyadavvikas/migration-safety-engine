@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-do
 import { useState, useEffect } from 'react'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ToastProvider } from './components/Toast'
+import OnboardingWizard from './components/OnboardingWizard'
 import Dashboard from './pages/Dashboard'
 import MigrationDetail from './pages/MigrationDetail'
 import NewPlan from './pages/NewPlan'
@@ -9,15 +10,17 @@ import DriftScanPage from './pages/DriftScanPage'
 import LoginPage from './pages/LoginPage'
 import { api } from './lib/api'
 
+const ONBOARDED_KEY = 'mse_onboarded'
+
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [userRole, setUserRole] = useState<string | null>(null)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   useEffect(() => {
     const token = api.getToken()
     if (token) {
       setIsAuthenticated(true)
-      // Decode token to get role (in production, validate with server)
       try {
         const payload = JSON.parse(atob(token.split('.')[1]))
         setUserRole(payload.role)
@@ -30,12 +33,20 @@ export default function App() {
   const handleLogin = (role: string) => {
     setIsAuthenticated(true)
     setUserRole(role)
+    if (!localStorage.getItem(ONBOARDED_KEY)) {
+      setShowOnboarding(true)
+    }
   }
 
   const handleLogout = () => {
     api.logout()
     setIsAuthenticated(false)
     setUserRole(null)
+  }
+
+  const handleOnboardingComplete = () => {
+    localStorage.setItem(ONBOARDED_KEY, '1')
+    setShowOnboarding(false)
   }
 
   if (!isAuthenticated) {
@@ -56,6 +67,7 @@ export default function App() {
     <BrowserRouter>
       <ToastProvider>
         <ErrorBoundary>
+          {showOnboarding && <OnboardingWizard onComplete={handleOnboardingComplete} />}
           <div className="app">
             <a href="#main-content" className="skip-link">Skip to main content</a>
             <nav className="nav" role="navigation" aria-label="Main navigation">
